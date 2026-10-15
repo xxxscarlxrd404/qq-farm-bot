@@ -109,10 +109,6 @@ function createSessionStore({ config } = {}) {
       session.openId = cleanOpenId;
       changed = true;
     }
-    if (code === session.code && /^\d+(?:\.\d+){2,4}_\d{8}$/.test(clientVersion) && !session.clientVersion) {
-      session.clientVersion = clientVersion;
-      changed = true;
-    }
     if (changed) markUpdated(session);
     return changed;
   }

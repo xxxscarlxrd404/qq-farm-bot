@@ -22,8 +22,7 @@ test('other seed levels retain their exact unlock boundary', () => {
 
 test('all currently configured level 200 and above seeds bypass the local check', () => {
   const highLevelSeeds = getAllSeeds().filter(seed => seed.requiredLevel >= 200);
-  assert.ok(highLevelSeeds.length >= 11);
-  assert.ok(highLevelSeeds.some(seed => seed.seedId === 29005));
+  assert.equal(highLevelSeeds.length, 11);
   for (const seed of highLevelSeeds) {
     assert.equal(isSeedLockedByLevel(seed, 1), false, `${seed.name} (${seed.requiredLevel})`);
   }

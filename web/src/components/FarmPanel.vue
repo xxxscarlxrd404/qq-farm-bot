@@ -238,9 +238,9 @@ onUnmounted(() => {
     class="space-y-4"
     :class="{ 'farm-panel-modal-open': confirmVisible }"
   >
-    <div class="rounded-lg bg-white shadow dark:bg-gray-800">
+    <div class="ui-card-elevated rounded-2xl p-4 sm:p-5 shadow-sm transition-all">
       <!-- Header with Title and Actions -->
-      <div class="flex flex-col items-stretch justify-between gap-3 border-b border-gray-100 p-4 sm:flex-row sm:items-center dark:border-gray-700">
+      <div class="flex flex-col items-stretch justify-between gap-3 border-b border-gray-100/70 pb-3 mb-3 sm:flex-row sm:items-center dark:border-gray-800/70">
         <h3 class="flex items-center gap-2 text-lg font-bold">
           <div class="i-carbon-grid text-xl" />
           土地详情
@@ -289,23 +289,23 @@ onUnmounted(() => {
         {{ dogSkillGiftError }}
       </div>
 
-      <!-- Summary -->
-      <div class="grid grid-cols-4 gap-2 border-b border-gray-100 bg-gray-50 p-3 text-xs sm:flex sm:flex-wrap sm:gap-4 dark:border-gray-700 dark:bg-gray-900/50 sm:p-4 sm:text-sm">
-        <div class="flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-          <div class="i-carbon-clean" />
-          <span class="font-medium">可收: {{ summary?.harvestable || 0 }}</span>
+      <!-- Summary (无死白灰带，全透液态微晶胶囊) -->
+      <div class="grid grid-cols-4 gap-2 p-2 sm:p-3 text-xs sm:flex sm:flex-wrap sm:gap-3 rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-md mb-2">
+        <div class="flex items-center justify-center gap-1 rounded-full px-2.5 py-1 font-semibold border border-orange-300/60 bg-orange-50/80 text-orange-700 dark:border-orange-500/30 dark:bg-orange-950/40 dark:text-orange-300 shadow-2xs">
+          <div class="i-carbon-clean text-[11px]" />
+          <span>可收: {{ summary?.harvestable || 0 }}</span>
         </div>
-        <div class="flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-          <div class="i-carbon-sprout" />
-          <span class="font-medium">生长: {{ summary?.growing || 0 }}</span>
+        <div class="flex items-center justify-center gap-1 rounded-full px-2.5 py-1 font-semibold border border-emerald-300/60 bg-emerald-50/80 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300 shadow-2xs">
+          <div class="i-carbon-sprout text-[11px]" />
+          <span>生长: {{ summary?.growing || 0 }}</span>
         </div>
-        <div class="flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-          <div class="i-carbon-checkbox" />
-          <span class="font-medium">空闲: {{ summary?.empty || 0 }}</span>
+        <div class="flex items-center justify-center gap-1 rounded-full px-2.5 py-1 font-semibold border border-slate-200/80 bg-white/70 text-slate-700 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-300 shadow-2xs">
+          <div class="i-carbon-checkbox text-[11px]" />
+          <span>空闲: {{ summary?.empty || 0 }}</span>
         </div>
-        <div class="flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-          <div class="i-carbon-warning" />
-          <span class="font-medium">枯萎: {{ summary?.dead || 0 }}</span>
+        <div class="flex items-center justify-center gap-1 rounded-full px-2.5 py-1 font-semibold border border-red-300/60 bg-red-50/80 text-red-700 dark:border-red-500/30 dark:bg-red-950/40 dark:text-red-300 shadow-2xs">
+          <div class="i-carbon-warning text-[11px]" />
+          <span>枯萎: {{ summary?.dead || 0 }}</span>
         </div>
       </div>
 

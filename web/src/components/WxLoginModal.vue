@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
-import { computed, ref, watch, useId } from 'vue'
-import { useModalFocus } from '@/composables/useModalFocus'
+import { computed, ref, watch } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { useAccountStore } from '@/stores/account'
@@ -133,20 +132,17 @@ watch(() => props.show, (newVal) => {
     stopCheck()
   }
 })
-const modalSurface = ref<HTMLElement | null>(null)
-const modalId = useId()
-useModalFocus(() => props.show, modalSurface, close)
 </script>
 
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div ref="modalSurface" role="dialog" aria-modal="true" :aria-labelledby="`${modalId}-title`" tabindex="-1" class="max-w-md w-full overflow-hidden rounded-lg shadow-xl" :style="{ background: 'var(--theme-bg)' }">
+    <div class="max-w-md w-full overflow-hidden rounded-lg shadow-xl" :style="{ background: 'var(--theme-bg)' }">
       <!-- Header -->
       <div class="flex items-center justify-between border-b p-4" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 10%, transparent)' }">
-        <h3 :id="`${modalId}-title`" class="text-lg font-semibold" :style="{ color: 'var(--theme-text)' }">
+        <h3 class="text-lg font-semibold" :style="{ color: 'var(--theme-text)' }">
           微信扫码登录
         </h3>
-        <BaseButton variant="ghost" aria-label="关闭弹窗" class="!p-1" @click="close">
+        <BaseButton variant="ghost" class="!p-1" @click="close">
           <div class="i-carbon-close text-xl" :style="{ color: 'var(--theme-text)' }" />
         </BaseButton>
       </div>

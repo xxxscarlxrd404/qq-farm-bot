@@ -498,7 +498,7 @@ async function buyFreeGifts(force = false) {
         module: 'task', event: FREE_GIFTS_DAILY_KEY, result: 'ok', count: claimed,
       });
     } else {
-      log('商城', '本次未成功领取免费礼包', {
+      log('商城', '今日暂无可领取免费礼包', {
         module: 'task', event: FREE_GIFTS_DAILY_KEY, result: 'none',
       });
     }

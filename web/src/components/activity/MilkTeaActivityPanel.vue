@@ -87,7 +87,7 @@ async function refresh() {
   const accountId = accounts.currentAccountId
   loading.value = true
   try {
-    const { data } = await api.get('/api/activity/milk-tea', { headers: { 'x-account-id': accountId }, timeout: 100000 })
+    const { data } = await api.get('/api/activity/milk-tea', { headers: { 'x-account-id': accountId }, timeout: 100000, skipErrorToast: true } as any)
     if (token !== generation)
       return
     if (!data.ok || !data.activity)
@@ -111,7 +111,7 @@ async function act(action: string, params: any = {}) {
   busy.value = true
   error.value = ''
   try {
-    const { data } = await api.post('/api/activity/milk-tea/operate', { accountId: accounts.currentAccountId, action, params }, { headers: { 'x-account-id': accounts.currentAccountId }, timeout: 190000 })
+    const { data } = await api.post('/api/activity/milk-tea/operate', { accountId: accounts.currentAccountId, action, params }, { headers: { 'x-account-id': accounts.currentAccountId }, timeout: 190000, skipErrorToast: true } as any)
     if (token !== generation)
       return
     if (!data.ok)
@@ -144,7 +144,7 @@ async function open(kind: string) {
   busy.value = true
   const token = generation
   try {
-    const { data } = await api.post('/api/activity/milk-tea/records', { accountId: accounts.currentAccountId, kind }, { headers: { 'x-account-id': accounts.currentAccountId }, timeout: 100000 })
+    const { data } = await api.post('/api/activity/milk-tea/records', { accountId: accounts.currentAccountId, kind }, { headers: { 'x-account-id': accounts.currentAccountId }, timeout: 100000, skipErrorToast: true } as any)
     if (!data.ok)
       throw new Error(data.error || '记录读取失败')
     if (token === generation && modal.value === kind)

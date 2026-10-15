@@ -34,25 +34,29 @@ const selectedPreset = defineModel<string | number>('selectedPreset', { required
 </script>
 
 <template>
-  <div class="border border-gray-200 rounded-lg bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-    <h4 class="mb-3 flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
-      <div class="i-carbon-mobile" />
-      设备协议配置
-    </h4>
-
-    <div v-if="loading" class="py-6 text-center text-sm text-gray-500">
-      <div class="i-svg-spinners-ring-resize mx-auto mb-2 text-2xl" />
-      <p>加载中...</p>
+  <div class="space-y-4">
+    <div class="flex items-center justify-between border-b border-gray-100/70 pb-2 dark:border-gray-800/70">
+      <h4 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
+        <div class="i-carbon-mobile text-blue-500" />
+        设备协议配置
+      </h4>
+      <span class="text-xs text-gray-400">全局风控设备特征参数</span>
     </div>
 
-    <div v-else class="space-y-3">
-      <div class="rounded-lg bg-gray-50 p-3 dark:bg-gray-700/40">
+    <div v-if="loading" class="py-8 text-center text-sm text-gray-500">
+      <div class="i-svg-spinners-ring-resize mx-auto mb-2 text-2xl text-blue-500" />
+      <p>正在同步协议配置...</p>
+    </div>
+
+    <div v-else class="space-y-3.5">
+      <!-- 开启开关微面板 -->
+      <div class="rounded-xl bg-gray-50/70 p-3.5 dark:bg-gray-800/40 border border-gray-100/60 dark:border-gray-800/60">
         <BaseSwitch
           v-model="form.enabled"
           label="启用自定义设备协议"
         />
-        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          启用后会使用这里配置的设备参数发起登录。修改后建议重新登录相关账号。
+        <p class="mt-1.5 text-xs text-gray-400 leading-relaxed">
+          启用后将模拟指定机型设备特征发起登录。修改后建议重新扫码或登录相关账号以应用新指纹。
         </p>
       </div>
 
@@ -124,11 +128,11 @@ const selectedPreset = defineModel<string | number>('selectedPreset', { required
         </div>
       </div>
 
-      <p class="text-xs text-gray-500 dark:text-gray-400">
-        这组配置全局生效，不区分单个账号。仅在登录兼容性或风控需要时启用即可。
+      <p class="text-xs text-gray-400 font-mono">
+        ※ 此组特征全局生效，不区分单个账号。仅在遭遇风控限制或协议不兼容时启用。
       </p>
 
-      <div v-if="showSave !== false" class="flex justify-end border-t pt-3 dark:border-gray-700">
+      <div v-if="showSave !== false" class="flex justify-end border-t border-gray-100/70 pt-3 dark:border-gray-800/70">
         <BaseButton
           variant="primary"
           size="sm"

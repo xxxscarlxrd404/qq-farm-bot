@@ -24,6 +24,8 @@ export interface Land {
 export const useFarmStore = defineStore('farm', () => {
   const lands = ref<Land[]>([])
   const seeds = ref<any[]>([])
+  // 按账号 ID 隔离的独立种子字典，杜绝跨账号选种预览串台
+  const seedsByAccount = ref<Record<string, any[]>>({})
   const summary = ref<any>({})
   const weather = ref<any>(null)
   const loading = ref(false)
@@ -77,8 +79,13 @@ export const useFarmStore = defineStore('farm', () => {
     })
     if (!isCurrentAccount(requestedId))
       return
-    if (data && data.ok)
-      seeds.value = data.data || []
+    if (data && data.ok) {
+      const list = data.data || []
+      seedsByAccount.value[requestedId] = list
+      if (isCurrentAccount(requestedId)) {
+        seeds.value = list
+      }
+    }
   }
 
   async function fetchDogSkillGiftStatus(accountId: string) {
@@ -171,6 +178,7 @@ export const useFarmStore = defineStore('farm', () => {
     summary,
     weather,
     seeds,
+    seedsByAccount,
     loading,
     dogSkillGiftPendingCount,
     dogSkillGiftLoading,

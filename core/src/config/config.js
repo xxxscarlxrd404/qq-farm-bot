@@ -1,6 +1,6 @@
 const process = require('node:process');
 
-const DEFAULT_CLIENT_VERSION = '1.14.0.4_20260911';
+const DEFAULT_CLIENT_VERSION = '1.15.0.2_20261001';
 
 function parseClientVersion(value) {
     const match = String(value || '').trim().match(/^(\d+(?:\.\d+){2,4})_(\d{8})$/);

@@ -105,7 +105,7 @@ const {
 const { nextBusinessBackoffMs } = require('../utils/gateway-health');
 const { runWithRequestPriority } = require('../utils/request-priority');
 const { loadProto } = require('../utils/proto');
-const { setLogHook, log, toNum } = require('../utils/utils');
+const { setLogHook, log, toNum, sleep } = require('../utils/utils');
 const { resourcePolicy, createResourceMonitor } = require('../runtime/resource-policy');
 
 // 设置环境变量中的账号ID
@@ -185,6 +185,23 @@ setRecordGoldExpHook((gold, exp) => {
 
 let isRunning = false;
 let loginReady = false;
+let latestDailyGifts = null;
+
+async function syncDailyGiftsToMaster() {
+    try {
+        const overview = await getDailyGiftOverview();
+        if (overview && overview.gifts) {
+            latestDailyGifts = overview;
+            sendToMaster({ type: 'daily_gifts_sync', data: overview });
+            try {
+                const statsService = require('../services/stats');
+                if (statsService && typeof statsService.setLatestDailyGifts === 'function') {
+                    statsService.setLatestDailyGifts(overview);
+                }
+            } catch {}
+        }
+    } catch {}
+}
 let appliedConfigRevision = 0;
 let unifiedSchedulerRunning = false;
 
@@ -252,22 +269,28 @@ function getLocalDateKey() {
 
 async function runDailyRoutines(force = false, options = {}) {
     if (!loginReady || friendSyncPaused) return;
-    try {
-        const automation = getAutomation() || {};
-        await checkAndClaimEmails(force);
-        if (automation.task && !options.skipTask) await checkAndClaimTasks();
-        if (automation.fertilizer_gift) await openFertilizerGiftPacksSilently();
-        await performDailyShare(force);
-        await performDailyMonthCardGift(force);
-        await buyFreeGifts(force);
-        await require('../services/mall-gift-auto-buy').autoBuyCouponGifts();
-        await performDailyVipGift(force);
-    } catch (err) {
-        log('系统', `每日任务调度失败: ${  err.message}`, {
-            module: 'system',
-            event: '每日任务',
-            result: 'error'
-        });
+    const automation = getAutomation() || {};
+    const tasks = [
+        ['邮件', () => checkAndClaimEmails(force)],
+        ['每日任务', () => (automation.task && !options.skipTask) ? checkAndClaimTasks() : Promise.resolve()],
+        ['化肥礼包', () => automation.fertilizer_gift ? openFertilizerGiftPacksSilently() : Promise.resolve()],
+        ['分享', () => performDailyShare(force)],
+        ['月卡', () => performDailyMonthCardGift(force)],
+        ['免费礼包', () => buyFreeGifts(force)],
+        ['点券礼包', () => require('../services/mall-gift-auto-buy').autoBuyCouponGifts()],
+        ['SVIP', () => performDailyVipGift(force)],
+    ];
+    for (const [name, fn] of tasks) {
+        try {
+            await fn();
+            await sleep(350);
+        } catch (err) {
+            log('系统', `每日[${name}]执行失败: ${err.message}`, {
+                module: 'system',
+                event: '每日任务',
+                result: 'error'
+            });
+        }
     }
 }
 
@@ -278,7 +301,9 @@ function stopDailyRoutineTimer() {
 function startDailyRoutineTimer() {
     stopDailyRoutineTimer();
     lastDailyRunDate = getLocalDateKey();
-    runDailyRoutines(true, { skipTask: true }).catch(() => null);
+    workerScheduler.setTimeoutTask('initial_daily_routine', 3500, () => {
+        runDailyRoutines(true, { skipTask: true }).then(() => syncDailyGiftsToMaster()).catch(() => null);
+    });
 
     // 每 60 秒检查一次日期是否变化
     workerScheduler.setIntervalTask('daily_routine_interval', 60000, () => {
@@ -288,12 +313,12 @@ function startDailyRoutineTimer() {
             // 分享资格在服务端日切后可能延迟刷新；服务内部有 10 分钟冷却，
             // 持续检查可避免零点单次未命中后必须重连才能领取。
             performDailyShare(false).catch(() => null);
-            if (!friendSyncPaused) require('../services/mall-gift-auto-buy').autoBuyCouponGifts().catch(() => null);
             return;
         }
         lastDailyRunDate = today;
         runDailyRoutines(true)
             .then(() => runBadOnceOnStartup(true))
+            .then(() => syncDailyGiftsToMaster())
             .catch(() => null);
     });
 }
@@ -535,16 +560,14 @@ async function runStarActivityAutoClaims() {
     starActivityClaimRunning = true;
     try {
         const {
-            getStarActivity,
-            getSolarTermsInfo,
             claimSeasonPassportRewards,
             claimSolarTermsReward,
             claimStarRecordRewards,
             claimQingmeiSeeds,
             brewAndSellQingmeiWine
         } = require('../services/activity');
-        const needsStarActivity = claimPassport || claimRecords || claimQingmeiSeedsEnabled || brewQingmeiWineEnabled;
-        const activity = needsStarActivity ? await getStarActivity() : {};
+        // 心许千灯星垂野已于2026年9月官方下线，彻底跳过 getStarActivity，避免产生未找到活动报错
+        const activity = {};
         if (claimPassport && Number(activity?.passport?.claimableLevels || 0) > 0) {
             try {
                 const result = await claimSeasonPassportRewards();
@@ -564,11 +587,12 @@ async function runStarActivityAutoClaims() {
         }
 
         if (claimSolarTerms) {
+            const { getSolarTermsInfo } = require('../services/activity');
             const solar = await getSolarTermsInfo().catch(error => {
                 log('活动', `节令小札读取失败：${error.message}`, { module: 'activity', event: '节令小札自动检查', result: 'error' });
                 return { terms: [] };
             });
-            const terms = solar.terms.filter(term => term.claimable);
+            const terms = (solar.terms || []).filter(term => term && term.claimable);
             for (const term of terms) {
                 try {
                     const result = await claimSolarTermsReward(Number(term.id) || 0);
@@ -752,7 +776,7 @@ async function runStarActivityAutoClaims() {
                     }
                 }
             } catch (err) {
-                if (!err.activityOperationLogged) log('活动', `秋祈良愿自动操作失败: ${err.message}`, { module: 'activity', event: '秋祈良愿自动操作', result: 'error' });
+                log('活动', `秋祈良愿自动操作失败: ${err.message}`, { module: 'activity', event: '秋祈良愿自动操作', result: 'error' });
             }
         }
 
@@ -774,7 +798,7 @@ async function runStarActivityAutoClaims() {
                     }
                 }
             } catch (err) {
-                if (!err.activityOperationLogged) log('活动', `快乐不独享自动领取失败: ${err.message}`, { module: 'activity', event: '快乐不独享自动领取', result: 'error' });
+                log('活动', `快乐不独享自动领取失败: ${err.message}`, { module: 'activity', event: '快乐不独享自动领取', result: 'error' });
             }
         }
 
@@ -903,34 +927,33 @@ async function runStarActivityAutoClaims() {
                 if (!['business', 'settling'].includes(currentPhase)) break;
                 try {
                     const state = await service.getMilkTea();
-                    if (!Number(state.summary.shop_open_at) && !['shareDaily', 'shareRewards', 'fundRewards'].includes(action)) continue;
+                    if (!Number(state.summary?.shop_open_at) && !['shareDaily', 'shareRewards', 'fundRewards'].includes(action)) continue;
                     let params = {};
                     if (action === 'buy') {
-                        const goods = state.goods.find(x => x.category_tag === 'seed' && x.unlocked && x.remaining > 0 && !x.paid && x.affordable);
+                        const goods = (state.goods || []).find(x => x.category_tag === 'seed' && x.unlocked && x.remaining > 0 && !x.paid && x.affordable);
                         if (!goods) continue;
                         params = { goodsId: goods.id, count: 1 };
                     }
                     if (action === 'hire') {
-                        const capacity = state.levels.find(x => x.level === Number(state.shop.level))?.employee_slot_count || 0;
-                        const slot = Array.from({ length: capacity }, (_, i) => i).find(i => !state.shop.slots.some(x => Number(x.slot_index) === i && Number(x.end_at) > state.serverTime));
+                        const capacity = (state.levels || []).find(x => x.level === Number(state.shop?.level))?.employee_slot_count || 0;
+                        const slot = Array.from({ length: capacity }, (_, i) => i).find(i => !(state.shop?.slots || []).some(x => Number(x.slot_index) === i && Number(x.end_at) > state.serverTime));
                         if (slot == null) continue;
                         const options = getAutomation() || {};
                         params = { slotIndex: slot, autoSelect: true, ...require('../services/activity-milk-tea').normalizeHireOptions({
                             durationId: options.milk_tea_hire_duration, talentId: options.milk_tea_hire_talent,
                         }) };
                     }
-                    if (action === 'cashier' && !state.shop.pending_rewards.some(x => Number(x.count) > 0)) continue;
-                    if (action === 'craft' && !state.recipes.some(recipe => recipe.unlocked && recipe.fruits?.length)) continue;
-                    if (action === 'boost' && !state.balances.some(item => String(item.id) === String(state.shop.sales_item_id) && Number(item.count) > 0)) continue;
-                    if (action === 'wages' && !state.summary.has_unclaimed_wage) continue;
-                    if (action === 'upgrade' && !state.summary.can_upgrade) continue;
+                    if (action === 'cashier' && !(state.shop?.pending_rewards || []).some(x => Number(x.count) > 0)) continue;
+                    if (action === 'craft' && !(state.recipes || []).some(recipe => recipe.unlocked && recipe.fruits?.length)) continue;
+                    if (action === 'boost' && !(state.balances || []).some(item => String(item.id) === String(state.shop?.sales_item_id) && Number(item.count) > 0)) continue;
+                    if (action === 'wages' && !state.summary?.has_unclaimed_wage) continue;
+                    if (action === 'upgrade' && !state.summary?.can_upgrade) continue;
                     if (currentPhase === 'settling' && !['cashier', 'wages', 'shareDaily', 'shareRewards', 'fundRewards'].includes(action)) continue;
                     if (action === 'shareDaily' && state.share?.daily?.daily_reward_claimed) continue;
-                    if (action === 'shareRewards' && !state.share?.milestones?.some(x => Number(x.state) === 2)) continue;
-                    if (action === 'fundRewards' && (!state.fund?.unlocked || !state.fund.tiers.some(x => Number(x.state) === 2))) continue;
+                    if (action === 'shareRewards' && !(state.share?.milestones || []).some(x => Number(x.state) === 2)) continue;
+                    if (action === 'fundRewards' && (!state.fund?.unlocked || !(state.fund?.tiers || []).some(x => Number(x.state) === 2))) continue;
                     await service.operateMilkTea(action, params);
                 } catch (error) {
-                    // Mutation failures are logged by the shared service; retain query failures here.
                     if (!error.milkTeaLogged) log('活动', `奶茶热销中自动检查失败：${error.message}`, { module: 'activity', event: '奶茶热销中自动检查', result: 'error' });
                 }
             }
@@ -1109,6 +1132,10 @@ async function runFarmTick(autoConfig) {
     try {
         await runWithRequestPriority('farm', async () => {
             if (autoConfig.farm) await checkFarm();
+            // 常态农田巡查中，若开启了自动卖果实，自动兜底清空背包中的成熟果实
+            if (autoConfig.sell && !harvestSellRunning) {
+                try { await sellAllFruits(); } catch (_) {}
+            }
         });
     } catch { } finally {
         nextFarmRunAt = Date.now() + nextDelay;
@@ -1290,7 +1317,7 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
         if (hasAutomation) {
             const newAuto = getAutomation();
 
-            const starClaimBecameEnabled = (!prevAuto?.star_solar_claim && newAuto?.star_solar_claim) || (
+            const starClaimBecameEnabled = (
                 !prevAuto?.star_passport_claim && newAuto?.star_passport_claim
             ) || (
                 !prevAuto?.star_record_claim && newAuto?.star_record_claim
@@ -1316,7 +1343,6 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
                 !prevAuto?.rain_poem_research_unlock && newAuto?.rain_poem_research_unlock
             ) || [
                 'pet_diary_adopt',
-                ...Object.keys(require('../services/activity-milk-tea').AUTO_ACTIONS),
                 'pet_diary_feed',
                 'pet_diary_draw',
                 'pet_diary_story_claim',
@@ -1342,13 +1368,6 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
             if (newAuto?.mystery_shop_auto_buy && mysteryShopConfigChanged) {
                 workerScheduler.setTimeoutTask('mystery_shop_auto_buy_after_save', 2000, () => {
                     runMysteryShopAutoBuy().catch(() => null);
-                });
-            }
-
-            if (!prevAuto?.mall_coupon_gift_buy && newAuto?.mall_coupon_gift_buy) {
-                workerScheduler.setTimeoutTask('mall_coupon_gift_buy_after_save', 2000, () => {
-                    if (!loginReady || friendSyncPaused) return;
-                    require('../services/mall-gift-auto-buy').autoBuyCouponGifts(true).catch(() => null);
                 });
             }
 
@@ -1599,6 +1618,13 @@ async function startBot(config) {
             await openFertilizerGiftPacksSilently().catch(() => 0);
         }
 
+        // 启动后执行一次静默果实检查与出售（清理账号历史遗留果实）
+        workerScheduler.setTimeoutTask('startup_sell_fruits_once', 6000, async () => {
+            if (getAutomation().sell) {
+                try { await sellAllFruits(); } catch (_) {}
+            }
+        });
+
         // 延迟执行放虫放草
         workerScheduler.setTimeoutTask('bad_startup_once', 15000, async () => {
             try {
@@ -1829,7 +1855,23 @@ async function handleApiCall(msg) {
                 result = await sellItems(items.map(it => ({
                     id: it.id, count: it.count, uid: it.uid || 0
                 })));
-                if (totalCount > 0) recordOperation('sell', totalCount);
+                if (totalCount > 0) {
+                    recordOperation('sell', totalCount);
+                    // 手动出售成功后，从回包中提取金币增量，实时通知统计模块与事件总线
+                    try {
+                        let goldGain = 0;
+                        if (result && Array.isArray(result.get_items)) {
+                            for (const git of result.get_items) {
+                                const gid = Number(git.id);
+                                if (gid === 1001 || gid === 500001) goldGain += Number(git.count) || 0;
+                            }
+                        }
+                        if (goldGain > 0) {
+                            networkEvents.emit('sell', { gold: goldGain, count: totalCount });
+                            updateStatusGold((getUserState()?.gold || 0) + goldGain);
+                        }
+                    } catch (_) {}
+                }
                 break;
             }
             case 'setAutomation': {
@@ -1869,8 +1911,8 @@ async function handleApiCall(msg) {
                 break;
             }
             case 'getMallGoods': {
-                const { getAllMallGoods } = require('../services/mall');
-                result = await getAllMallGoods();
+                const { getMallGoodsList } = require('../services/mall');
+                result = await getMallGoodsList(0);
                 break;
             }
             case 'buyMallGoods': {
@@ -2085,6 +2127,13 @@ async function handleApiCall(msg) {
             }
             case 'getDailyGiftOverview':
                 result = await getDailyGiftOverview();
+                latestDailyGifts = result;
+                try {
+                    const statsService = require('../services/stats');
+                    if (statsService && typeof statsService.setLatestDailyGifts === 'function') {
+                        statsService.setLatestDailyGifts(result);
+                    }
+                } catch {}
                 break;
             case 'getSchedulers':
                 result = { ...getSchedulerRegistrySnapshot(), resources: resourceMonitor.snapshot() };
@@ -2292,6 +2341,9 @@ function syncStatus() {
     stats.automation = getAutomation();
     stats.levelProgress = levelProgress;
     stats.configRevision = appliedConfigRevision;
+    if (latestDailyGifts) {
+        stats.dailyGifts = latestDailyGifts;
+    }
 
     const stableStats = { ...stats };
     delete stableStats.nextChecks;

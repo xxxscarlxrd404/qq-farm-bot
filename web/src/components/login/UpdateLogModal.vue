@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { marked } from 'marked'
-import { computed, ref } from 'vue'
-import { useModalFocus } from '@/composables/useModalFocus'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 
-const props = defineProps<{
+defineProps<{
   show: boolean
 }>()
 
@@ -21,8 +20,13 @@ const renderedContent = computed(() => marked.parse(updateReadme, {
   breaks: false,
 }) as string)
 
-const modalSurface = ref<HTMLElement | null>(null)
-useModalFocus(() => props.show, modalSurface, () => emit('close'))
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape')
+    emit('close')
+}
+
+onMounted(() => window.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
 </script>
 
 <template>
@@ -30,8 +34,6 @@ useModalFocus(() => props.show, modalSurface, () => emit('close'))
     <Transition name="update-log-modal">
       <div
         v-if="show"
-        ref="modalSurface"
-        tabindex="-1"
         class="update-log-overlay"
         role="dialog"
         aria-modal="true"

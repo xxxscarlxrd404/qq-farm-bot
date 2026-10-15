@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import api from '@/api'
 import StrategySettingsTab from '@/components/settings/StrategySettingsTab.vue'
 import StrategyTimingPanel from '@/components/settings/StrategyTimingPanel.vue'
+import AccountDeviceProtocolCard from '@/components/settings/AccountDeviceProtocolCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -305,11 +306,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
       请先选择账号
     </div>
     <template v-else>
-      <div class="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <span class="text-gray-700 font-medium dark:text-gray-300">账号设置</span>
-        <span class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600" />
-        <span>{{ currentAccountName ? `正在配置：${currentAccountName}` : '请先在账号管理中选择账号' }}</span>
-      </div>
+
 
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <article
@@ -329,7 +326,6 @@ watch(() => props.currentAccountId, loadQixiFriends)
               </div>
             </div>
             <BaseSwitch
-              :aria-label="`${info.title}自动化`"
               :model-value="moduleEnabled(key as ModuleKey)"
               :disabled="saving"
               @update:model-value="setModuleEnabled(key as ModuleKey, !!$event)"
@@ -356,11 +352,17 @@ watch(() => props.currentAccountId, loadQixiFriends)
             </BaseButton>
           </div>
         </article>
+
+        <!-- 账号专属：自定义设备登录卡片 (排列在卡片最后一位) -->
+        <AccountDeviceProtocolCard
+          :current-account-id="props.currentAccountId"
+          :current-account-name="props.currentAccountName"
+        />
       </div>
     </template>
 
     <Teleport to="body">
-      <div v-if="activeModule && activeInfo" class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-gray-950/45 p-3 backdrop-blur-[2px] sm:p-6" @click.self="cancel">
+      <div v-if="activeModule && activeInfo" class="fixed inset-0 z-[10000] grid place-items-center overflow-y-auto bg-gray-950/60 p-3 backdrop-blur-[2px] sm:p-6" @click.self="cancel">
         <section class="max-h-[94vh] max-w-4xl w-full flex flex-col overflow-hidden border border-gray-200 rounded-lg bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800">
           <header class="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 dark:border-gray-700 sm:px-6">
             <div class="min-w-0 flex items-start gap-3">

@@ -20,14 +20,22 @@ function registerAdminWishShareActivityRoutes({ app, provider, getAccountIdFromR
   app.get('/api/activity/milk-tea', async (req, res) => {
     const accountId = getAuthorizedAccountId(req, res, { getAccountIdFromRequest, canAccessAccount });
     if (!accountId) return;
-    try { if (!requireConnectedAccount(res, provider, accountId, '账号未运行')) return;
+    try {
+      if (!provider.isAccountRunning || !provider.isAccountRunning(accountId)) {
+        return res.json({ ok: false, error: '账号未运行，请先启动挂机账号', notRunning: true });
+      }
+      if (!requireConnectedAccount(res, provider, accountId, '账号未运行')) return;
       res.json({ ok: true, activity: await provider.getMilkTea(accountId) });
     } catch (error) { sendProviderError(res, error); }
   });
   for (const kind of ['operate', 'records']) app.post(`/api/activity/milk-tea/${kind}`, async (req, res) => {
     const accountId = getAuthorizedAccountId(req, res, { getAccountIdFromRequest, canAccessAccount });
     if (!accountId) return;
-    try { if (!requireConnectedAccount(res, provider, accountId, '账号未运行')) return;
+    try {
+      if (!provider.isAccountRunning || !provider.isAccountRunning(accountId)) {
+        return res.json({ ok: false, error: '账号未运行，请先启动挂机账号', notRunning: true });
+      }
+      if (!requireConnectedAccount(res, provider, accountId, '账号未运行')) return;
       const result = kind === 'operate' ? await provider.operateMilkTea(accountId, req.body?.action, req.body?.params) : await provider.milkTeaRecords(accountId, req.body?.kind, req.body?.params);
       res.json({ ok: true, ...result });
     } catch (error) { sendProviderError(res, error); }

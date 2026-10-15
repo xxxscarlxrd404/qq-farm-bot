@@ -57,12 +57,6 @@ function currencyIcon(item: any) {
       <div class="mt-1 text-center text-xs text-amber-600 font-semibold dark:text-amber-400">
         {{ item.isFree ? L.free : `${formatCouponAmount(item.price)} ${item.currencyName || L.coupon}` }}
       </div>
-      <p v-for="reward in item.rewards || []" :key="reward.itemId" class="mt-1 break-words text-xs text-gray-500">
-        {{ reward.name }} ×{{ reward.count }}
-      </p>
-      <p v-if="item.endTime" class="mt-1 text-xs text-gray-500">
-        截止 {{ new Date(item.endTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }}
-      </p>
       <p v-if="item.discount" class="line-clamp-2 mt-2 text-[11px] text-blue-500 leading-5 dark:text-blue-400">
         {{ item.discount }}
       </p>

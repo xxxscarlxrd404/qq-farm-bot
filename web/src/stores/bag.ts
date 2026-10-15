@@ -6,6 +6,8 @@ import { useAccountStore } from '@/stores/account'
 export const useBagStore = defineStore('bag', () => {
   const allItems = ref<any[]>([])
   const originalItems = ref<any[]>([])
+  // 按账号 ID 隔离的独立背包字典，彻底解决背包数据跨账号串台
+  const bagsByAccount = ref<Record<string, { items: any[], originalItems: any[] }>>({})
   const loading = ref(false)
   const pendingFetches = new Map<string, Promise<void>>()
 
@@ -43,32 +45,28 @@ export const useBagStore = defineStore('bag', () => {
   }
 
   async function fetchBagOnce(accountId: string) {
-    const requestedId = accountId
+    const requestedId = String(accountId)
     try {
       const res = await api.get('/api/bag', {
-        headers: { 'x-account-id': accountId },
+        headers: { 'x-account-id': requestedId },
       })
-      const acc = useAccountStore()
-      const curId = String((acc.currentAccountId as { value?: string })?.value ?? acc.currentAccountId ?? '')
-      if (curId !== requestedId)
-        return
-      if (res.data.ok && res.data.data) {
-        allItems.value = Array.isArray(res.data.data.items) ? res.data.data.items : []
-        originalItems.value = Array.isArray(res.data.data.originalItems) ? res.data.data.originalItems : []
+      if (res.data && res.data.ok && res.data.data) {
+        const bagData = {
+          items: Array.isArray(res.data.data.items) ? res.data.data.items : [],
+          originalItems: Array.isArray(res.data.data.originalItems) ? res.data.data.originalItems : [],
+        }
+        bagsByAccount.value[requestedId] = bagData
+        allItems.value = bagData.items
+        originalItems.value = bagData.originalItems
       }
-      else if (res.data && res.data.ok === false && res.data.error) {
+      else if (res.data && res.data.ok === false) {
+        bagsByAccount.value[requestedId] = { items: [], originalItems: [] }
         allItems.value = []
         originalItems.value = []
       }
     }
     catch (e) {
-      const acc = useAccountStore()
-      const curId = String((acc.currentAccountId as { value?: string })?.value ?? acc.currentAccountId ?? '')
-      if (curId === requestedId) {
-        allItems.value = []
-        originalItems.value = []
-      }
-      console.error(e)
+      console.error('获取背包失败:', e)
     }
   }
 
@@ -86,5 +84,5 @@ export const useBagStore = defineStore('bag', () => {
     return res.data
   }
 
-  return { items, allItems, originalItems, dashboardItems, loading, fetchBag, clearBag, useItem, sellItems }
+  return { items, allItems, originalItems, bagsByAccount, dashboardItems, loading, fetchBag, clearBag, useItem, sellItems }
 })

@@ -13,16 +13,20 @@ const {
 } = require('../models/store');
 const { checkAndBuyFertilizerBoth } = require('./mall');
 const { createScheduler } = require('./scheduler');
+const { checkAndAutoPet } = require('./auto-pet');
 
 const fertilizerScheduler = createScheduler('fertilizer_buy');
 
-/** 启动化肥自动购买检测定时器 */
+/** 启动化肥与宠物自动巡查检测定时器 */
 function startFertilizerBuyCheckTimer() {
   fertilizerScheduler.clear('check');
 
-  if (!isAutomationOn('fertilizer_buy_organic') && !isAutomationOn('fertilizer_buy_normal')) return;
+  const hasFertilizer = isAutomationOn('fertilizer_buy_organic') || isAutomationOn('fertilizer_buy_normal');
+  const hasPet = isAutomationOn('auto_buy_dog_food') || isAutomationOn('auto_feed_dog');
 
-  const intervalMinutes = getFertilizerBuyCheckIntervalMinutes();
+  if (!hasFertilizer && !hasPet) return;
+
+  const intervalMinutes = hasFertilizer ? getFertilizerBuyCheckIntervalMinutes() : 30;
   const intervalMs = intervalMinutes * 60 * 1000;
 
   fertilizerScheduler.setIntervalTask('check', intervalMs, checkFertilizerBuyOnce, {
@@ -49,6 +53,10 @@ function stopFertilizerBuyCheckTimer() {
 
 /** 执行一次化肥购买检测 */
 async function checkFertilizerBuyOnce() {
+  const currentAccountId = process.env.FARM_ACCOUNT_ID || '';
+  if (currentAccountId) {
+    checkAndAutoPet(currentAccountId).catch(() => null);
+  }
   if (!isAutomationOn('fertilizer_buy_organic') && !isAutomationOn('fertilizer_buy_normal')) return;
 
   try {

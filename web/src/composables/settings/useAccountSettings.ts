@@ -51,7 +51,7 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
   const stoppedAccountsCount = computed(() => stoppedAccounts.value.length)
   const currentAccountName = computed(() => {
     const acc = accounts.value.find((item: any) => item.id === currentAccountId.value)
-    return acc ? (acc.name || acc.nick || acc.id) : null
+    return acc ? (acc.nick || acc.name || acc.id) : null
   })
 
   useIntervalFn(() => {
@@ -140,8 +140,27 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
     }
   }
 
-  function handleSaved() {
-    accountStore.fetchAccounts()
+  async function handleSaved(targetId?: string) {
+    await accountStore.fetchAccounts()
+    if (targetId && accountStore.accounts.length > 0) {
+      const target = accountStore.accounts.find(a => String(a.id) === String(targetId))
+      if (target) {
+        accountStore.setCurrentAccount(target)
+        return
+      }
+    }
+    // 如果没有传入明确的 targetId（例如编辑已有账号未指定新ID），优先保持当前已选中的账号不变！
+    if (currentAccountId.value && accountStore.accounts.length > 0) {
+      const curr = accountStore.accounts.find(a => String(a.id) === String(currentAccountId.value))
+      if (curr) {
+        accountStore.setCurrentAccount(curr)
+        return
+      }
+    }
+    // 只有全都没匹配到时（例如刚添加了第一个全新账号），才选最后一个
+    if (accountStore.accounts.length > 0) {
+      accountStore.setCurrentAccount(accountStore.accounts[accountStore.accounts.length - 1])
+    }
   }
 
   function selectAccount(account: any) {

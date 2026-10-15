@@ -76,13 +76,3 @@ test('cleanupExpired removes stale sessions', () => {
   store.cleanupExpired();
   assert.equal(store.getSession('s1'), null);
 });
-
-test('gateway version travels with its matching captured code', () => {
-  const store = createSessionStore({ config });
-  const session = store.createSession('version', 'qq');
-  store.addCode(session, { code: 'first', clientVersion: '1.14.2.15_20260922' });
-  store.addCode(session, { code: 'second', clientVersion: '1.15.0.0_20261015' });
-  const entry = store.buildSnapshot(session).channels.qq.codes[0];
-  assert.equal(entry.code, 'first');
-  assert.equal(entry.clientVersion, '1.14.2.15_20260922');
-});

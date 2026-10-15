@@ -161,10 +161,10 @@ function createRuntimeState(deps) {
         const aid = String(accountId || '');
         const ops = buildEmptyOperations();
         let totalSteal = 0;
+        const todayKey = getTodayKey();
 
         if (aid) {
             const persisted = loadPersistedStats(aid);
-            const todayKey = getTodayKey();
             if (persisted) {
                 if (persisted.date === todayKey && persisted.operations) {
                     for (const key of operationKeys) {
@@ -179,21 +179,66 @@ function createRuntimeState(deps) {
             }
         }
 
+        let savedLevel = 0;
+        let savedName = '';
+        let savedGold = 0;
+        let savedExp = 0;
+        let savedGoldGained = 0;
+        let savedExpGained = 0;
+
+        if (aid) {
+            const p = loadPersistedStats(aid);
+            if (p) {
+                if (p.profile) {
+                    savedLevel = Number(p.profile.level) || 0;
+                    savedName = p.profile.name || '';
+                    savedGold = Number(p.profile.gold) || 0;
+                    savedExp = Number(p.profile.exp) || 0;
+                }
+                // 离线时：若尚未拉取到当前实际余额（savedGold <= 0），不计算误判负增量；仅在有记录上次有效余额时才计算
+                const lastRecordedGold = Number(p.lastState?.gold ?? p.profile?.gold ?? 0);
+                const baseGold = Number(p.accountBaseline?.gold ?? p.initialState?.gold);
+                const baseExp = Number(p.accountBaseline?.exp ?? p.initialState?.exp);
+                if (lastRecordedGold > 0 && Number.isFinite(baseGold)) {
+                    savedGold = lastRecordedGold;
+                    savedGoldGained = lastRecordedGold - baseGold;
+                } else {
+                    savedGoldGained = 0;
+                }
+                const lastRecordedExp = Number(p.lastState?.exp ?? p.profile?.exp ?? 0);
+                if (lastRecordedExp > 0 && Number.isFinite(baseExp)) {
+                    savedExp = lastRecordedExp;
+                    savedExpGained = lastRecordedExp - baseExp;
+                } else {
+                    savedExpGained = 0;
+                }
+            }
+        }
+
+        let accountPlatform = 'qq';
+        if (aid) {
+            try {
+                const accs = store.getAccounts ? store.getAccounts() : null;
+                const found = (accs?.accounts || []).find(a => String(a.id) === aid);
+                if (found?.platform) accountPlatform = String(found.platform).toLowerCase();
+            } catch {}
+        }
+
         return {
             connection: { connected: false },
-            status: { name: '', level: 0, gold: 0, exp: 0, platform: 'qq' },
+            status: { name: savedName, level: savedLevel, gold: savedGold, exp: savedExp, platform: accountPlatform },
             uptime: 0,
             operations: ops,
             totalSteal,
-            sessionExpGained: 0,
-            sessionGoldGained: 0,
+            sessionExpGained: savedExpGained,
+            sessionGoldGained: savedGoldGained,
             sessionCouponGained: 0,
             lastExpGain: 0,
             lastGoldGain: 0,
             limits: {},
             wsError: null,
             automation: store.getAutomation(aid),
-            expProgress: { current: 0, needed: 0, level: 0 },
+            expProgress: { current: 0, needed: 0, level: savedLevel },
             configRevision,
             accountId: aid
         };

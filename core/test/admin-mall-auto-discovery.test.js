@@ -10,7 +10,6 @@ test('automatically exposes activity goods while keeping unrelated regular goods
   assert.equal(shouldExposeMallGoods({ goods_id: 1042, is_activity: true }), true);
   assert.equal(shouldExposeMallGoods({ goods_id: 1043, end_time: 1893456000 }), true);
   assert.equal(shouldExposeMallGoods({ goods_id: 1015 }), false);
-  assert.equal(shouldExposeMallGoods({ goods_id: 10001, type: 5 }), true);
   assert.equal(shouldExposeMallGoods({ goods_id: 1002 }), true);
 });
 

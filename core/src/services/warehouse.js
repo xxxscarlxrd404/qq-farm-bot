@@ -171,7 +171,11 @@ async function batchUseItems(entries) {
 // ---- 数据解析 ----
 
 function isFruitItemId(id) {
-  return !!getPlantByFruitId(Number(id));
+  const nid = Number(id);
+  const info = getItemById(nid);
+  // 如果物品没有正常商店回收价（sells 为空，如森野甜莓40525等活动作物在活动期间），不可直接向商店出售
+  if (!info || !info.sells) return false;
+  return !!getPlantByFruitId(nid);
 }
 
 /**
@@ -534,13 +538,14 @@ async function sellAllFruits() {
       const id = toNum(item.id);
       const count = toNum(item.count);
       const reservedForTea = require('./activity-milk-tea').reserveMilkTeaFruit(id, isAutomationOn('milk_tea_craft'), getServerTimeSec());
-      if (isFruitItemId(id) && count > 0 && !reservedForTea) {
+      // 只要是奶茶活动配方所需果实，在活动期间一律禁止自动出售
+      const isTeaFruit = [40525, 40526, 40527, 40528, 40529, 40021, 41435, 49005].includes(id);
+      if (isFruitItemId(id) && count > 0 && !reservedForTea && !isTeaFruit) {
         fruits.push(item);
       }
     }
 
     if (fruits.length === 0) {
-      log('仓库', '无果实可出售');
       return;
     }
 

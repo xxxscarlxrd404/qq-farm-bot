@@ -22,7 +22,11 @@ export const usePetStore = defineStore('pet', () => {
       const { data } = await api.get('/api/dog/info', { headers: headers(accountId), timeout: 60000 })
       if (!data?.ok)
         throw new Error(data?.error || '获取宠物信息失败')
-      overview.value = data.data
+      overview.value = {
+        ...data.data,
+        autoBuyFood: data.data?.autoBuyFood === true,
+        autoFeedDog: data.data?.autoFeedDog === true,
+      }
     }
     finally { loading.value = false }
   }
@@ -55,5 +59,18 @@ export const usePetStore = defineStore('pet', () => {
       throw new Error(data?.error || '保存失败')
     capitalMode.value = data.data.capitalMode
   }
-  return { overview, logs, capitalMode, loading, mutating, fetchOverview, fetchLogs, fetchCapitalMode, activate, deploy, withdraw, feed, saveCapitalMode }
+  async function setAutoConfig(accountId: string, payload: { autoBuyFood?: boolean, autoFeedDog?: boolean }) {
+    if (!accountId) return
+    const { data } = await api.post('/api/dog/auto-config', payload, { headers: headers(accountId) })
+    if (data?.ok) {
+      const resp = data.data || data
+      overview.value = {
+        ...overview.value,
+        ...(resp.autoBuyFood !== undefined ? { autoBuyFood: resp.autoBuyFood === true } : {}),
+        ...(resp.autoFeedDog !== undefined ? { autoFeedDog: resp.autoFeedDog === true } : {}),
+      }
+    }
+    return data
+  }
+  return { overview, logs, capitalMode, loading, mutating, fetchOverview, fetchLogs, fetchCapitalMode, activate, deploy, withdraw, feed, saveCapitalMode, setAutoConfig }
 })

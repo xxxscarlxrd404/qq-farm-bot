@@ -4,6 +4,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api from '@/api'
+import AccountCareerModal from '@/components/AccountCareerModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -11,6 +12,7 @@ import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { useUserStore } from '@/stores/user'
 import { formatCouponAmount, formatGoldAmount, formatGoldBeanAmount } from '@/utils/number-format'
 import { compactRuntimeLogs, matchesRuntimeLog, normalizeRuntimeLog } from '@/utils/runtime-log'
 
@@ -18,6 +20,7 @@ const statusStore = useStatusStore()
 const accountStore = useAccountStore()
 const bagStore = useBagStore()
 const toastStore = useToastStore()
+const userStore = useUserStore()
 
 const {
   status,
@@ -113,6 +116,9 @@ const events = [
   { label: '喂食宠物', value: '喂食宠物' },
   { label: '资本模式派出', value: '资本模式派出' },
   { label: '资本模式召回', value: '资本模式召回' },
+  { label: '有机化肥检测', value: 'check_fertilizer_organic' },
+  { label: '普通化肥检测', value: 'check_fertilizer_normal' },
+  { label: '化肥自动购买检测', value: 'check_fertilizer' },
 ]
 
 const eventLabelMap: Record<string, string> = Object.fromEntries(
@@ -123,59 +129,25 @@ const displayName = computed(() => {
   const account = accountStore.currentAccount
   const gameName = status.value?.status?.name
 
-  if (gameName) {
-    if (account?.name)
-      return `${gameName} (${account.name})`
+  if (gameName)
     return gameName
-  }
 
   if (currentAccountDisconnected.value) {
-    if (account) {
-      if (account.name && account.nick)
-        return `${account.nick} (${account.name})`
-      return account.name || account.nick || '未登录'
-    }
+    if (account)
+      return account.nick || account.name || '未登录'
     return '未登录'
   }
 
-  if (account) {
-    if (account.name && account.nick)
-      return `${account.nick} (${account.name})`
-    return account.name || account.nick || '未命名'
-  }
+  if (account)
+    return account.nick || account.name || '未命名'
 
   return '未命名'
 })
 
-const expRate = computed(() => {
-  const gain = status.value?.sessionExpGained || 0
-  const uptime = status.value?.uptime || 0
-  if (!uptime)
-    return '0/小时'
-  const rate = gain / (uptime / 3600)
-  return `${Math.floor(rate)}/小时`
-})
-
-const timeToLevel = computed(() => {
-  const gain = status.value?.sessionExpGained || 0
-  const uptime = status.value?.uptime || 0
-  const current = status.value?.levelProgress?.current || 0
-  const needed = status.value?.levelProgress?.needed || 0
-
-  if (!needed || !uptime || gain <= 0)
-    return ''
-
-  const ratePerHour = gain / (uptime / 3600)
-  if (ratePerHour <= 0)
-    return ''
-
-  const expNeeded = Math.max(0, needed - current)
-  const minsToLevel = expNeeded / (ratePerHour / 60)
-
-  if (minsToLevel < 60)
-    return `约 ${Math.ceil(minsToLevel)} 分钟后升级`
-  return `约 ${(minsToLevel / 60).toFixed(1)} 小时后升级`
-})
+/*
+const expRate = computed(() => '0/小时')
+const timeToLevel = computed(() => '')
+*/
 
 const fertilizerNormal = computed(() => dashboardItems.value.find((item: any) => Number(item.id) === 1011))
 const fertilizerOrganic = computed(() => dashboardItems.value.find((item: any) => Number(item.id) === 1012))
@@ -191,6 +163,9 @@ let localNextStealRemainSec = 0
 const farmCountdownTotal = ref(1)
 const helpCountdownTotal = ref(1)
 const stealCountdownTotal = ref(1)
+
+
+// Task modal moved to AccountSettingsTab
 
 function resetDashboardState() {
   illustratedLevelRequestId += 1
@@ -256,6 +231,9 @@ const filteredOperations = computed(() => {
 })
 
 function getEventLabel(event: string) {
+  if (event === 'check_fertilizer_organic') return '有机化肥检测'
+  if (event === 'check_fertilizer_normal') return '普通化肥检测'
+  if (event === 'check_fertilizer') return '化肥检测'
   return eventLabelMap[event] || event
 }
 
@@ -268,7 +246,8 @@ function formatBucketTime(item: any) {
 }
 
 function updateCountdowns() {
-  if (currentAccountDisconnected.value) {
+  if (!currentAccountId.value || currentAccountDisconnected.value || !status.value?.connection?.connected) {
+    localUptime.value = 0
     nextFarmCheck.value = '账号未登录'
     nextHelpCheck.value = '账号未登录'
     nextStealCheck.value = '账号未登录'
@@ -487,6 +466,7 @@ async function refresh(forceReloadLogs = false) {
 
   // 仅在账号运行且连接稳定后再拉背包，避免启动阶段出现 500。
   await refreshBag()
+  if (currentAccountId.value && currentAccount.value?.running) statusStore.fetchDailyGifts(currentAccountId.value)
 }
 
 function syncRealtimeAccount() {
@@ -598,160 +578,261 @@ onMounted(async () => {
 useIntervalFn(refresh, 10000)
 // Countdown timer (every 1s)
 useIntervalFn(updateCountdowns, 1000)
+
+const showCareerModal = ref(false)
+const careerLoading = ref(false)
+const careerError = ref('')
+const careerItems = ref<any[]>([])
+const careerProfile = ref<Record<string, any>>({})
+const avatarLoadFailed = ref(false)
+
+function liveAccountAvatar() {
+  if (!currentStatusReady.value)
+    return ''
+  return String(
+    status.value?.status?.avatar
+    || status.value?.status?.avatarUrl
+    || status.value?.status?.avatar_url
+    || '',
+  ).trim()
+}
+
+const currentAvatar = computed(() => {
+  const acc = currentAccount.value
+  if (!acc)
+    return '/default-user-avatar.png'
+  const explicit = liveAccountAvatar() || String(acc.avatar || '').trim()
+  if (explicit)
+    return explicit
+  const qq = String(acc.uin || acc.qq || '').trim()
+  if (qq && /^\d+$/.test(qq))
+    return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100`
+  return '/default-user-avatar.png'
+})
+
+watch(() => currentAccountId.value, () => {
+  avatarLoadFailed.value = false
+})
+
+async function loadCareer() {
+  const accountId = String(currentAccountId.value || '').trim()
+  if (!accountId)
+    return
+  careerLoading.value = true
+  careerError.value = ''
+  try {
+    const { data } = await api.get('/api/career', {
+      headers: { 'x-account-id': accountId },
+    })
+    if (!data?.ok)
+      throw new Error(data?.error || '生涯记录读取失败')
+    careerProfile.value = data.data || {}
+    careerItems.value = data.data?.items || []
+  }
+  catch (error: any) {
+    careerError.value = error?.response?.data?.error || error?.message || '生涯记录读取失败'
+  }
+  finally {
+    careerLoading.value = false
+  }
+}
+
+function openCareer() {
+  if (!currentAccount.value)
+    return
+  showCareerModal.value = true
+  loadCareer()
+}
+
 </script>
 
 <template>
   <div class="flex flex-col gap-5 pt-1 md:h-full md:min-h-0 md:overflow-hidden md:pt-2">
-    <div class="grid grid-cols-1 shrink-0 gap-4 lg:grid-cols-3 sm:grid-cols-2">
-      <div class="ui-card metric-card min-h-[168px] flex flex-col rounded-lg p-5">
-        <div class="mb-2 flex items-start justify-between">
-          <div class="flex items-center gap-1.5 text-sm text-gray-500">
-            <div class="i-fas-user-circle" />
-            账号
-          </div>
-          <div class="rounded-lg bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-            Lv.{{ status?.status?.level || 0 }}
-          </div>
-        </div>
-        <div class="mb-1 truncate text-xl font-bold" :title="displayName">
-          {{ displayName }}
-        </div>
-        <div class="mt-auto">
-          <div class="mb-1 flex justify-between text-xs text-gray-500">
-            <div class="flex items-center gap-1">
-              <div class="i-fas-bolt text-blue-400" />
-              <span>EXP</span>
-            </div>
-            <span>{{ status?.levelProgress?.current || 0 }} / {{ status?.levelProgress?.needed || '?' }}</span>
-          </div>
-          <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+    <!-- 一体化全景控制台卡片（集成：身份、等级、经验、核心资产、物资、图鉴） -->
+    <div class="ui-card relative overflow-hidden rounded-2xl p-4 sm:p-5 transition-all shadow-md">
+      <!-- 顶部：身份、等级、在线状态与运行时长 -->
+      <div class="flex items-center justify-between gap-2 border-b border-gray-100/70 pb-2.5 dark:border-gray-800/70">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div
+            class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden rounded-xl ring-2 ring-white/80 cursor-pointer shadow-md transition-transform duration-200 hover:scale-105 active:scale-95 bg-white/40"
+            title="查看个人生涯记录"
+            @click="openCareer"
+          >
+            <img
+              v-if="!avatarLoadFailed"
+              :src="currentAvatar"
+              :alt="displayName"
+              referrerpolicy="no-referrer"
+              class="h-full w-full object-cover"
+              @error="avatarLoadFailed = true"
+            >
             <div
-              class="h-full rounded-full bg-blue-500 transition-all duration-500"
-              :style="{ width: `${getExpPercent(status?.levelProgress)}%` }"
-            />
+              v-else
+              class="h-full w-full flex items-center justify-center bg-blue-500/10 text-blue-600 dark:bg-blue-400/20 dark:text-blue-300 font-bold text-sm"
+            >
+              {{ displayName.slice(0, 1) }}
+            </div>
           </div>
-          <div class="mt-2 flex justify-between text-xs text-gray-400">
-            <span>效率: {{ expRate }}</span>
-            <span>{{ timeToLevel }}</span>
-          </div>
-        </div>
-      </div>
 
-      <div class="ui-card metric-card min-h-[168px] flex flex-col justify-between rounded-lg p-5">
-        <div class="grid grid-cols-4 gap-3">
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5 text-xs text-gray-500">
-              <img src="/game-config/resource-icons/gold.png" alt="金币" class="h-5 w-5 shrink-0 object-contain">
-              金币
-            </div>
-            <div class="text-2xl text-yellow-600 font-bold dark:text-yellow-500">
-              {{ formatGoldAmount(status?.status?.gold || 0) }}
-            </div>
-            <div
-              v-if="(status?.sessionGoldGained || 0) !== 0"
-              class="text-[10px]"
-              :class="(status?.sessionGoldGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
-            >
-              {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ formatGoldAmount(status?.sessionGoldGained || 0) }}
-            </div>
-          </div>
-          <div class="min-w-0 text-center">
-            <div class="flex items-center justify-center gap-1.5 text-xs text-gray-500">
-              <img src="/game-config/resource-icons/coupon.png" alt="点券" class="h-5 w-5 shrink-0 object-contain">
-              点券
-            </div>
-            <div class="text-2xl text-emerald-500 font-bold dark:text-emerald-400">
-              {{ formatCouponAmount(status?.status?.coupon || 0) }}
-            </div>
-            <div
-              v-if="(status?.sessionCouponGained || 0) !== 0"
-              class="text-[10px]"
-              :class="(status?.sessionCouponGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
-            >
-              {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ formatCouponAmount(status?.sessionCouponGained || 0) }}
-            </div>
-          </div>
-          <div class="min-w-0 text-center">
-            <div class="flex items-center justify-center gap-1.5 text-xs text-gray-500">
-              <img src="/game-config/resource-icons/diamond.png" alt="钻石" class="h-5 w-5 shrink-0 object-contain">
-              钻石
-            </div>
-            <div class="text-2xl text-cyan-600 font-bold dark:text-cyan-400">
-              {{ formatCouponAmount(status?.status?.diamond || 0) }}
-            </div>
-          </div>
-          <div class="min-w-0 text-right">
-            <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
-              <img src="/game-config/resource-icons/gold-bean.png" alt="金豆豆" class="h-5 w-5 shrink-0 object-contain">
-              金豆
-            </div>
-            <div class="text-2xl text-amber-500 font-bold dark:text-amber-400">
-              {{ formatGoldBeanAmount(status?.status?.goldBean || 0) }}
-            </div>
-          </div>
-        </div>
-        <div class="mt-4 border-t border-gray-100/80 pt-3 dark:border-gray-700/80">
-          <div class="flex items-center justify-between">
+          <div class="min-w-0 flex-1">
+            <!-- 第一行：昵称 + 等级徽章 -->
             <div class="flex items-center gap-2">
-              <div class="h-2.5 w-2.5 rounded-full" :class="status?.connection?.connected ? 'bg-green-500' : currentStatusReady ? 'bg-red-500' : 'bg-gray-300'" />
-              <span class="text-xs font-bold">{{ status?.connection?.connected ? '在线' : currentStatusReady ? '离线' : '检查中' }}</span>
+              <span class="truncate text-base font-bold sm:text-lg" :title="displayName">
+                {{ displayName }}
+              </span>
+              <span class="shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                Lv.{{ status?.status?.level || 0 }}
+              </span>
             </div>
-            <div class="flex items-center gap-1.5 text-xs text-gray-400">
-              <div class="i-fas-clock text-purple-400" />
-              {{ formatDuration(localUptime) }}
+
+            <!-- 第二行：账号设置同款平台胶囊 + 到期时间 -->
+            <div class="mt-0.5 flex items-center gap-2">
+              <span
+                class="rounded px-1.5 py-0.2 text-[10px] font-medium leading-tight shrink-0"
+                :class="(currentAccount?.platform || status?.status?.platform) === 'wx'
+                  ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                  : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'"
+              >
+                {{ (currentAccount?.platform || status?.status?.platform) === 'wx' ? '微信' : 'QQ' }}
+              </span>
+
+              <span class="truncate text-xs text-gray-400 font-mono">
+                <span v-if="userStore.userCard">到期：{{ userStore.expireTimeText }}</span>
+                <span v-else>永久有效</span>
+              </span>
             </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+          <div class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" :class="status?.connection?.connected ? 'bg-green-100/80 text-green-700 dark:bg-green-900/30 dark:text-green-300' : currentStatusReady ? 'bg-red-100/80 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'">
+            <span class="h-2 w-2 rounded-full" :class="status?.connection?.connected ? 'bg-green-500 animate-pulse' : currentStatusReady ? 'bg-red-500' : 'bg-gray-400'" />
+            <span>{{ status?.connection?.connected ? '在线' : currentStatusReady ? '离线' : '检查中' }}</span>
+          </div>
+          <div class="flex items-center gap-1 text-xs text-gray-400 font-mono">
+            <div class="i-fas-clock text-purple-400" />
+            <span>{{ formatDuration(localUptime) }}</span>
           </div>
         </div>
       </div>
 
-      <div class="ui-card metric-card min-h-[168px] flex flex-col justify-between rounded-lg p-5">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <img src="/game-config/resource-icons/fertilizer-normal.png" alt="普通化肥" class="h-5 w-5 shrink-0 object-contain">
-              普通
-            </div>
-            <div class="font-bold">
-              {{ formatBucketTime(fertilizerNormal) }}
-            </div>
+      <!-- 经验条（纯粹极简布局：左侧标识，右侧数值） -->
+      <div class="py-2">
+        <div class="mb-1.5 flex items-center justify-between text-xs text-gray-500 font-mono">
+          <span class="flex items-center gap-1">
+            <span class="i-fas-bolt text-amber-500 text-[11px]" />
+            <span class="font-semibold text-gray-600 dark:text-gray-300">经验 EXP</span>
+          </span>
+
+          <span class="font-medium text-gray-600 dark:text-gray-300">
+            {{ status?.levelProgress?.current || 0 }} / {{ status?.levelProgress?.needed || '?' }}
+          </span>
+        </div>
+
+        <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+          <div
+            class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
+            :style="{ width: `${getExpPercent(status?.levelProgress)}%` }"
+          />
+        </div>
+      </div>
+
+      <!-- 核心资产：4 宫格数据矩阵 -->
+      <div class="grid grid-cols-4 gap-2 py-2">
+        <div class="flex flex-col items-center justify-center rounded-xl bg-gray-50/70 py-2 dark:bg-gray-800/40">
+          <div class="flex items-center gap-1 text-xs text-gray-500 mb-0.5">
+            <img src="/game-config/resource-icons/gold.png" alt="金币" class="h-4 w-4 shrink-0 object-contain">
+            <span>金币</span>
           </div>
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <img src="/game-config/resource-icons/fertilizer-organic.png" alt="有机化肥" class="h-5 w-5 shrink-0 object-contain">
-              有机
-            </div>
-            <div class="font-bold">
-              {{ formatBucketTime(fertilizerOrganic) }}
-            </div>
+          <div class="text-base font-bold sm:text-lg text-yellow-600 dark:text-yellow-500 truncate max-w-full px-1">
+            {{ formatGoldAmount(status?.status?.gold || 0) }}
+          </div>
+          <div
+            v-if="(status?.sessionGoldGained || 0) !== 0"
+            class="text-[10px] font-mono leading-none"
+            :class="(status?.sessionGoldGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
+          >
+            {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ formatGoldAmount(status?.sessionGoldGained || 0) }}
           </div>
         </div>
-        <div class="my-3 border-t border-gray-100/80 dark:border-gray-700/80" />
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <img src="/game-config/resource-icons/illustrated-crop.png" alt="作物图鉴" class="h-6 w-6 shrink-0 object-contain">
-              作物图鉴
-            </div>
-            <div class="font-bold">
-              Lv.{{ illustratedLevels.crop }}
-            </div>
+
+        <div class="flex flex-col items-center justify-center rounded-xl bg-gray-50/70 py-2 dark:bg-gray-800/40">
+          <div class="flex items-center gap-1 text-xs text-gray-500 mb-0.5">
+            <img src="/game-config/resource-icons/coupon.png" alt="点券" class="h-4 w-4 shrink-0 object-contain">
+            <span>点券</span>
           </div>
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <img src="/game-config/resource-icons/illustrated-mutant.png" alt="超变图鉴" class="h-6 w-6 shrink-0 object-contain">
-              超变图鉴
-            </div>
-            <div class="font-bold">
-              Lv.{{ illustratedLevels.mutant }}
-            </div>
+          <div class="text-base font-bold sm:text-lg text-emerald-500 dark:text-emerald-400 truncate max-w-full px-1">
+            {{ formatCouponAmount(status?.status?.coupon || 0) }}
           </div>
+          <div
+            v-if="(status?.sessionCouponGained || 0) !== 0"
+            class="text-[10px] font-mono leading-none"
+            :class="(status?.sessionCouponGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
+          >
+            {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ formatCouponAmount(status?.sessionCouponGained || 0) }}
+          </div>
+        </div>
+
+        <div class="flex flex-col items-center justify-center rounded-xl bg-gray-50/70 py-2 dark:bg-gray-800/40">
+          <div class="flex items-center gap-1 text-xs text-gray-500 mb-0.5">
+            <img src="/game-config/resource-icons/diamond.png" alt="钻石" class="h-4 w-4 shrink-0 object-contain">
+            <span>钻石</span>
+          </div>
+          <div class="text-base font-bold sm:text-lg text-cyan-600 dark:text-cyan-400 truncate max-w-full px-1">
+            {{ formatCouponAmount(status?.status?.diamond || 0) }}
+          </div>
+        </div>
+
+        <div class="flex flex-col items-center justify-center rounded-xl bg-gray-50/70 py-2 dark:bg-gray-800/40">
+          <div class="flex items-center gap-1 text-xs text-gray-500 mb-0.5">
+            <img src="/game-config/resource-icons/gold-bean.png" alt="金豆" class="h-4 w-4 shrink-0 object-contain">
+            <span>金豆</span>
+          </div>
+          <div class="text-base font-bold sm:text-lg text-amber-500 dark:text-amber-400 truncate max-w-full px-1">
+            {{ formatGoldBeanAmount(status?.status?.goldBean || 0) }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 辅助物资与图鉴（紧凑胶囊通栏：普通肥、作物图鉴、有机肥、超变图鉴） -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-gray-100/70 dark:border-gray-800/70">
+        <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 bg-gray-50/50 dark:bg-gray-800/30">
+          <div class="flex items-center gap-1.5 text-xs text-gray-500">
+            <img src="/game-config/resource-icons/fertilizer-normal.png" alt="普通化肥" class="h-4 w-4 shrink-0 object-contain">
+            <span>普通化肥</span>
+          </div>
+          <span class="text-xs font-bold text-gray-700 dark:text-gray-200">{{ formatBucketTime(fertilizerNormal) }}</span>
+        </div>
+
+        <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 bg-gray-50/50 dark:bg-gray-800/30">
+          <div class="flex items-center gap-1.5 text-xs text-gray-500">
+            <img src="/game-config/resource-icons/illustrated-crop.png" alt="作物图鉴" class="h-4 w-4 shrink-0 object-contain">
+            <span>作物图鉴</span>
+          </div>
+          <span class="text-xs font-bold text-gray-700 dark:text-gray-200">Lv.{{ illustratedLevels.crop }}</span>
+        </div>
+
+        <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 bg-gray-50/50 dark:bg-gray-800/30">
+          <div class="flex items-center gap-1.5 text-xs text-gray-500">
+            <img src="/game-config/resource-icons/fertilizer-organic.png" alt="有机化肥" class="h-4 w-4 shrink-0 object-contain">
+            <span>有机化肥</span>
+          </div>
+          <span class="text-xs font-bold text-gray-700 dark:text-gray-200">{{ formatBucketTime(fertilizerOrganic) }}</span>
+        </div>
+
+        <div class="flex items-center justify-between rounded-lg px-2.5 py-1.5 bg-gray-50/50 dark:bg-gray-800/30">
+          <div class="flex items-center gap-1.5 text-xs text-gray-500">
+            <img src="/game-config/resource-icons/illustrated-mutant.png" alt="超变图鉴" class="h-4 w-4 shrink-0 object-contain">
+            <span>超变图鉴</span>
+          </div>
+          <span class="text-xs font-bold text-gray-700 dark:text-gray-200">Lv.{{ illustratedLevels.mutant }}</span>
         </div>
       </div>
     </div>
 
     <div class="flex flex-1 flex-col items-stretch gap-5 md:min-h-0 md:flex-row">
       <div class="flex flex-1 flex-col gap-5 md:min-h-0 md:w-3/4">
-        <div class="ui-card-elevated flex flex-1 flex-col rounded-lg p-3 md:min-h-0 md:overflow-hidden sm:p-5">
+        <div class="ui-card flex flex-1 flex-col rounded-lg p-3 md:min-h-0 md:overflow-hidden sm:p-5">
           <div class="mb-4 flex flex-col gap-3">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <h3 class="flex items-center gap-2 text-lg font-medium">
@@ -858,7 +939,7 @@ useIntervalFn(updateCountdowns, 1000)
       </div>
 
       <div class="flex flex-col gap-4 md:min-h-0 md:w-1/4 md:overflow-hidden">
-        <div class="ui-card flex shrink-0 flex-col rounded-lg p-3.5">
+        <div class="ui-card flex shrink-0 flex-col rounded-2xl p-3.5">
           <h3 class="mb-3 flex items-center gap-2 text-base font-medium 2xl:text-lg">
             <div class="i-carbon-hourglass" />
             <span>下次检查倒计时</span>
@@ -909,12 +990,12 @@ useIntervalFn(updateCountdowns, 1000)
           </div>
         </div>
 
-        <div class="ui-card min-h-0 flex flex-1 flex-col overflow-hidden rounded-lg p-4">
+        <div class="ui-card min-h-0 flex flex-1 flex-col overflow-hidden rounded-2xl p-4">
           <h3 class="mb-3 flex items-center gap-2 text-base font-medium 2xl:text-lg">
             <div class="i-carbon-chart-column" />
             <span>今日统计</span>
           </h3>
-          <div v-if="currentAccountDisconnected" class="ui-subtle-panel flex flex-col items-center justify-center gap-3 rounded-lg p-5 text-center text-gray-500">
+          <div v-if="currentAccountDisconnected" class="ui-subtle-panel flex flex-col items-center justify-center gap-3 rounded-2xl p-5 text-center text-gray-500">
             <div class="i-carbon-connection-signal-off text-4xl text-gray-400" />
             <div class="flex flex-col">
               <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
@@ -925,7 +1006,7 @@ useIntervalFn(updateCountdowns, 1000)
               </div>
             </div>
           </div>
-          <div v-else-if="!Object.keys(filteredOperations).length" class="ui-subtle-panel flex flex-col items-center justify-center gap-2 rounded-lg p-5 text-center">
+          <div v-else-if="!Object.keys(filteredOperations).length" class="ui-subtle-panel flex flex-col items-center justify-center gap-2 rounded-2xl p-5 text-center">
             <div class="i-carbon-chart-column text-3xl text-gray-300" />
             <div class="text-sm text-gray-600 font-medium dark:text-gray-300">
               暂无主动作统计
@@ -954,5 +1035,21 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
     </div>
+  
+    <Teleport to="body">
+      <AccountCareerModal
+        :show="showCareerModal"
+        :account="currentAccount"
+        :profile="careerProfile"
+        :items="careerItems"
+        :loading="careerLoading"
+        :error="careerError"
+        @close="showCareerModal = false"
+        @refresh="loadCareer"
+      />
+    </Teleport>
   </div>
+
+
+
 </template>

@@ -138,6 +138,8 @@ function createAdminRouteHelpers({ store, userStore, logger, getProvider }) {
     checkAccountLimitInterval,
     getAdminUserMutationError,
     requireAdminRole,
+    adminRequired: requireAdminRole,
+    checkUserAccess: requireAdminRole,
     requireDangerConfirmation,
     requireSuperAdminRole,
     sendProviderError,

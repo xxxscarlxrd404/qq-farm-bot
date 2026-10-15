@@ -37,8 +37,10 @@ function createAdminAccountAccess({ store, getProvider }) {
   function canAccessAccount(req, accountId) {
     const currentUser = req.currentUser;
     if (!currentUser) return false;
-    if (currentUser.role === 'admin' || currentUser.role === 'super_admin')
+    // 超级管理员拥有全站最高访问权限，可无缝查看与配置所有用户账号
+    if (currentUser.role === 'admin' || currentUser.username === 'admin') {
       return true;
+    }
     const accountList = getAccountsForUser();
     const account = accountList.find(item => item.id === accountId);
     if (!account) return false;
@@ -48,20 +50,12 @@ function createAdminAccountAccess({ store, getProvider }) {
   function getAccessibleAccountIdsFromRequest(req) {
     const currentUser = req.currentUser;
     if (!currentUser) return [];
-    if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
-      const accountList = getAccountsForUser();
-      return accountList.map(account => account.id);
-    }
     const accountList = getAccountsForUser(currentUser.username);
     return accountList.map(account => account.id);
   }
 
   function getAccessibleAccountIdsForUser(user) {
     if (!user) return [];
-    if (user.role === 'admin' || user.role === 'super_admin') {
-      const accountList = getAccountsForUser();
-      return accountList.map(account => account.id);
-    }
     const accountList = getAccountsForUser(user.username);
     return accountList.map(account => account.id);
   }

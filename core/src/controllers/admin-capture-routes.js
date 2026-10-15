@@ -494,7 +494,6 @@ function registerAdminCaptureRoutes({
   resolveAccountReference,
   ensureEmbeddedCaptureService,
   stopEmbeddedCaptureService,
-  updateRuntimeConfig,
 }) {
   const cleanupTimer = setInterval(() => {
     void cleanupExpiredFlows(store).catch((error) => {
@@ -511,7 +510,8 @@ function registerAdminCaptureRoutes({
       res.json({
         ok: true,
         data: {
-          enabled: config.enabled === true,
+          enabled: config.enabled === true
+            && ((embedded && running) || (!embedded && !!config.apiBase && !!config.apiToken)),
           embedded,
           running,
           apiBase: config.apiBase,

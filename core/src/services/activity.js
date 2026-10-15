@@ -3451,7 +3451,19 @@ module.exports = {
 
 let milkTeaService;
 function getMilkTeaService() {
-  if (!milkTeaService) milkTeaService = require('./activity-milk-tea').createMilkTeaService({ types, sendMsgAsync, getBag, getBagItems, getUserState, getServerTimeSec: require('../utils/utils').getServerTimeSec, itemDto: petDiaryHelpers.itemDto });
+  const { types: loadedTypes } = require('../utils/proto');
+  if (!milkTeaService || !milkTeaService._ready) {
+    milkTeaService = require('./activity-milk-tea').createMilkTeaService({
+      types: loadedTypes || types,
+      sendMsgAsync,
+      getBag,
+      getBagItems,
+      getUserState,
+      getServerTimeSec: require('../utils/utils').getServerTimeSec,
+      itemDto: petDiaryHelpers.itemDto
+    });
+    milkTeaService._ready = true;
+  }
   return milkTeaService;
 }
 module.exports.getMilkTea = () => getMilkTeaService().getMilkTea();

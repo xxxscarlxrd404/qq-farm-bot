@@ -8,35 +8,77 @@ import 'nprogress/nprogress.css'
 NProgress.configure({ showSpinner: false })
 
 const adminToken = useStorage('admin_token', '')
-const userInfo = useStorage('user_info', '')
-let sessionPromise: Promise<boolean> | null = null
-let sessionBootstrapAttempted = false
+let validatedToken = ''
+let validatingPromise: Promise<boolean> | null = null
 
-async function ensureAdminSession() {
-  // 管理页面采用宽松鉴权：已有 token 时直接放行，不在导航时重复校验。
-  if (adminToken.value || sessionBootstrapAttempted)
-    return true
+const TOKEN_VALID_CACHE_KEY = 'token_valid_cache'
+const TOKEN_VALID_CACHE_TTL = 5 * 60 * 1000
 
-  if (!sessionPromise) {
-    sessionBootstrapAttempted = true
-    sessionPromise = axios.post('/api/auto-login', {}, { timeout: 6000 })
-      .then(({ data }) => {
-        if (!data?.ok)
-          return false
-        adminToken.value = data.data.token
-        userInfo.value = JSON.stringify({
-          username: 'admin',
-          role: 'admin',
-          card: null,
-          accountLimit: data.data.accountLimit,
-          mustChangePassword: false,
-        })
-        return true
-      })
-      .catch(() => false)
-      .finally(() => { sessionPromise = null })
+interface TokenCacheEntry {
+  token: string
+  validUntil: number
+}
+
+function getTokenCache(): TokenCacheEntry | null {
+  try {
+    const raw = localStorage.getItem(TOKEN_VALID_CACHE_KEY)
+    if (!raw) return null
+    const entry = JSON.parse(raw) as TokenCacheEntry
+    if (entry.validUntil > Date.now()) return entry
+    localStorage.removeItem(TOKEN_VALID_CACHE_KEY)
+    return null
+  } catch {
+    return null
   }
-  return sessionPromise
+}
+
+function setTokenCache(token: string) {
+  try {
+    localStorage.setItem(TOKEN_VALID_CACHE_KEY, JSON.stringify({
+      token,
+      validUntil: Date.now() + TOKEN_VALID_CACHE_TTL,
+    }))
+  } catch {}
+}
+
+function clearTokenCache() {
+  try { localStorage.removeItem(TOKEN_VALID_CACHE_KEY) } catch {}
+}
+
+async function ensureTokenValid() {
+  const token = String(adminToken.value || '').trim()
+  if (!token) return false
+
+  if (validatedToken && validatedToken === token) return true
+
+  const cache = getTokenCache()
+  if (cache && cache.token === token) {
+    validatedToken = token
+    return true
+  }
+
+  if (validatingPromise) return validatingPromise
+
+  validatingPromise = axios.get('/api/auth/validate', {
+    headers: { 'x-admin-token': token },
+    timeout: 6000,
+  }).then((res) => {
+    const ok = !!(res.data && res.data.ok)
+    if (ok) {
+      validatedToken = token
+      setTokenCache(token)
+    } else {
+      clearTokenCache()
+    }
+    return ok
+  }).catch(() => {
+    clearTokenCache()
+    return false
+  }).finally(() => {
+    validatingPromise = null
+  })
+
+  return validatingPromise
 }
 
 const router = createRouter({
@@ -51,19 +93,58 @@ const router = createRouter({
         component: route.component,
       })),
     },
-    { path: '/admin', redirect: '/settings?tab=system' },
-    { path: '/login', redirect: '/' },
-    { path: '/renewal', redirect: '/' },
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/Login.vue'),
+    },
+    {
+      path: '/renewal',
+      name: 'renewal',
+      component: () => import('@/views/Renewal.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
 
-router.beforeEach(async () => {
+router.beforeEach(async (to) => {
   NProgress.start()
-  await ensureAdminSession()
+
+  if (to.name === 'login' || to.name === 'renewal') {
+    if (!adminToken.value) {
+      validatedToken = ''
+      return true
+    }
+    const valid = await ensureTokenValid()
+    if (valid) return { path: '/' }
+    adminToken.value = ''
+    validatedToken = ''
+    return true
+  }
+
+  if (!adminToken.value) {
+    validatedToken = ''
+    return { name: 'login' }
+  }
+
+  const valid = await ensureTokenValid()
+  if (!valid) {
+    adminToken.value = ''
+    validatedToken = ''
+    return { name: 'login' }
+  }
+
   return true
 })
 
 router.afterEach(() => NProgress.done())
+
+
+router.onError((error, to) => {
+  console.error('[Router] 导航加载异常:', error)
+  if (error.message.includes('Failed to fetch dynamically imported module') || error.message.includes('Importing a module script failed')) {
+    window.location.href = to.fullPath
+  }
+})
 
 export default router

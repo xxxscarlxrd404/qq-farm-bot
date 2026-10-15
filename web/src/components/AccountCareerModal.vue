@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { Account } from '@/stores/account'
-import { computed, ref, useId } from 'vue'
-import { useModalFocus } from '@/composables/useModalFocus'
+import { computed, onBeforeUnmount, watch } from 'vue'
 
 interface CareerItem {
   seedId: number
@@ -58,22 +57,36 @@ function formatCompactNumber(value: number) {
   return `${compactValue.toFixed(digits).replace(/\.0+$|(?<=\.\d)0+$/g, '')}${unit.suffix}`
 }
 
-const modalSurface = ref<HTMLElement | null>(null)
-const modalId = useId()
-useModalFocus(() => props.show, modalSurface, () => emit('close'))
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && props.show)
+    emit('close')
+}
+
+watch(() => props.show, (show) => {
+  document.body.style.overflow = show ? 'hidden' : ''
+  if (show)
+    window.addEventListener('keydown', onKeydown)
+  else
+    window.removeEventListener('keydown', onKeydown)
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = ''
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
   <Transition name="career-fade">
     <div v-if="show" class="fixed inset-0 z-[10020] flex items-center justify-center bg-black/45 p-3 backdrop-blur-sm" @click.self="emit('close')">
-      <section ref="modalSurface" role="dialog" aria-modal="true" :aria-labelledby="`${modalId}-title`" tabindex="-1" class="career-panel max-h-[min(88vh,820px)] max-w-2xl w-full overflow-hidden rounded-3xl bg-[#f7f5ef] shadow-2xl dark:bg-gray-900">
+      <section class="career-panel max-h-[min(88vh,820px)] max-w-2xl w-full overflow-hidden rounded-3xl bg-[#f7f5ef] shadow-2xl dark:bg-gray-900">
         <header class="relative flex items-center gap-4 border-b border-amber-100 px-5 py-5 dark:border-gray-700 sm:px-7">
           <div class="h-16 w-16 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-amber-100 ring-2 ring-white dark:bg-gray-700 dark:ring-gray-600">
             <img v-if="avatar" :src="avatar" :alt="name" class="h-full w-full object-cover">
             <span v-else class="text-xl text-amber-700 font-bold">{{ name.slice(0, 1) }}</span>
           </div>
           <div class="min-w-0">
-            <h2 :id="`${modalId}-title`" class="truncate text-xl text-gray-900 font-bold dark:text-white">
+            <h2 class="truncate text-xl text-gray-900 font-bold dark:text-white">
               {{ name }}
             </h2>
             <div class="mt-2 flex flex-wrap items-center gap-2 text-sm">

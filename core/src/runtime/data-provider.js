@@ -207,7 +207,15 @@ function createDataProvider(deps) {
         sellItems: (ref, items) => callWorkerApi(resolveAccountId(ref), 'sellItems', items),
 
         // ========== 每日礼包 ==========
-        getDailyGifts: (ref) => callWorkerApi(resolveAccountId(ref), 'getDailyGiftOverview'),
+        getDailyGifts: async (ref) => {
+            const id = resolveAccountId(ref);
+            const gifts = await callWorkerApi(id, 'getDailyGiftOverview');
+            if (gifts && workers[id]) {
+                if (!workers[id].status) workers[id].status = {};
+                workers[id].status.dailyGifts = gifts;
+            }
+            return gifts;
+        },
 
         // ========== Mall ==========
         getMallGoods: (ref) => callWorkerApi(resolveAccountId(ref), 'getMallGoods'),
@@ -376,9 +384,63 @@ function createDataProvider(deps) {
                 delete acc.loginBuffer;
                 delete acc.refreshtoken;
                 delete acc.accesstoken;
-                if (worker && worker.status && worker.status.status && worker.status.status.name) {
-                    acc.nick = worker.status.status.name;
+
+                let liveLevel = null;
+                let liveNick = null;
+                let liveTasks = null;
+
+                if (worker && worker.status) {
+                    if (worker.status.status) {
+                        liveLevel = worker.status.status.level;
+                        liveNick = worker.status.status.name || worker.status.status.nick;
+                    }
+                    if (worker.status.dailyGifts && worker.status.dailyGifts.gifts) {
+                        liveTasks = worker.status.dailyGifts.gifts;
+                    }
                 }
+                // 如果实时数据未获取到，从该账号自身的持久化 stats 中读取真实的等级与任务，绝不向其他账号借用数据！
+                if (!liveLevel || !liveTasks) {
+                    try {
+                        const persisted = require('../services/stats').loadPersistedStats(account.id);
+                        if (persisted) {
+                            if (!liveLevel && persisted.profile && persisted.profile.level) {
+                                liveLevel = persisted.profile.level;
+                            }
+                            if (!liveNick && persisted.profile && persisted.profile.name) {
+                                liveNick = persisted.profile.name;
+                            }
+                            if (!liveTasks && persisted.dailyGifts && persisted.dailyGifts.gifts) {
+                                liveTasks = persisted.dailyGifts.gifts;
+                            }
+                        }
+                    } catch (_) {}
+                }
+
+                // 尝试从持久化 stats 补全真实等级与任务（离线时也能正常显示等级和任务）
+                if (liveLevel === null || liveLevel === undefined || !liveTasks) {
+                    try {
+                        const path = require('node:path');
+                        const fs = require('node:fs');
+                        const baseDir = process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');
+                        const statsFile = path.join(baseDir, 'stats', `${acc.id}.json`);
+                        if (fs.existsSync(statsFile)) {
+                            const stat = JSON.parse(fs.readFileSync(statsFile, 'utf8'));
+                            if (stat && stat.profile && stat.profile.level && (liveLevel === null || liveLevel === undefined)) {
+                                liveLevel = stat.profile.level;
+                            }
+                            if (stat && stat.profile && stat.profile.name && !acc.nick && !liveNick) {
+                                liveNick = stat.profile.name;
+                            }
+                            if (!liveTasks && stat && stat.dailyGifts && stat.dailyGifts.gifts) {
+                                liveTasks = stat.dailyGifts.gifts;
+                            }
+                        }
+                    } catch {}
+                }
+
+                if (liveNick) acc.nick = liveNick;
+                if (liveLevel !== null && liveLevel !== undefined) acc.level = Number(liveLevel);
+                if (liveTasks) acc.tasks = liveTasks;
             });
             return data;
         },

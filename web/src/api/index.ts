@@ -21,12 +21,21 @@ function showNetworkToast(message: string) {
 
 api.interceptors.request.use((config) => {
   const token = tokenRef.value
-  if (token) {
+  if (token && !config.headers['x-admin-token']) {
     config.headers['x-admin-token'] = token
   }
-  const accountId = accountIdRef.value
-  if (accountId) {
-    config.headers['x-account-id'] = accountId
+  // 必须只在未显式传递 x-account-id 时才使用默认选中的账号！
+  // 绝对不能覆盖请求显式指定的特定账号 ID，否则会导致多账号数据严重串台！
+  if (!config.headers['x-account-id']) {
+    let currentId = accountIdRef.value
+    if (!currentId) {
+      try {
+        currentId = localStorage.getItem('current_account_id') || ''
+      } catch {}
+    }
+    if (currentId) {
+      config.headers['x-account-id'] = currentId
+    }
   }
   return config
 }, error => Promise.reject(error))
@@ -58,7 +67,16 @@ api.interceptors.response.use((response) => {
       toast.error(`服务器错误 ${error.response.status} ${error.response.statusText}`)
     }
     else {
-      toast.error('请求失败，请联系管理员')
+      const backendError = String(error.response.data?.error || error.response.data?.message || '')
+      if (backendError === '无权访问此账号') {
+        accountIdRef.value = ''
+        return Promise.reject(error)
+      }
+      if (backendError) {
+        toast.error(backendError)
+      } else {
+        toast.error('请求失败，请联系管理员')
+      }
     }
   }
   else if (error.request) {

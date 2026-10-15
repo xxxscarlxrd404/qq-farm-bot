@@ -112,12 +112,12 @@ function updateFriendDogInfoCache(accountId, gid, dogInfo) {
     if (!accountId || !numericGid) return false;
     const cache = readFriendDogInfoCache(accountId) || {};
     const dogId = Number(dogInfo && dogInfo.dogId) || 0;
-    if (dogId === 90021) {
+    if (dogId > 0) {
         const current = cache[numericGid];
-        if (current && Number(current.dogId) === dogId && current.dogName === (dogInfo.dogName || '护主犬')) {
+        if (current && Number(current.dogId) === dogId && current.dogName === (dogInfo.dogName || '')) {
             return false;
         }
-        cache[numericGid] = { dogId, dogName: dogInfo.dogName || '护主犬' };
+        cache[numericGid] = { dogId, dogName: dogInfo.dogName || '' };
     } else if (Object.hasOwn(cache, numericGid)) {
         delete cache[numericGid];
     } else {
@@ -202,6 +202,16 @@ function deleteAccountCaches(accountId) {
     deleteFriendListCache(accountId);
     deleteFriendDogInfoCache(accountId);
     deleteKnownFriendGidsCache(accountId);
+    try {
+        const path = require('node:path');
+        const statsDir = path.join(process.env.FARM_DATA_DIR || path.join(__dirname, '../../data'), 'stats');
+        const f1 = path.join(statsDir, accountId + '.json');
+        const f2 = path.join(statsDir, 'history_' + accountId + '.json');
+        const f3 = path.join(statsDir, 'career_' + accountId + '.json');
+        if (fs.existsSync(f1)) fs.unlinkSync(f1);
+        if (fs.existsSync(f2)) fs.unlinkSync(f2);
+        if (fs.existsSync(f3)) fs.unlinkSync(f3);
+    } catch {}
 }
 
 // ==================== 允许的策略 ====================
@@ -296,6 +306,8 @@ const DEFAULT_AUTOMATION = {
     milk_tea_hire_talent: 0,
     milk_tea_seed_buy: false,
     pet_diary_feed: false,
+    auto_buy_dog_food: false,
+    auto_feed_dog: false,
     pet_diary_draw: false,
     pet_diary_story_claim: false,
     pet_diary_seed_claim: false,
@@ -483,7 +495,8 @@ const DEFAULT_ACCOUNT_CONFIG = {
     autoAcceptFriendMinLevel: 0,
     goldenBugKeepCount: 0,
     goldenBugRoundLimit: 24,
-    capitalMode: DEFAULT_CAPITAL_MODE
+    capitalMode: DEFAULT_CAPITAL_MODE,
+    pendingQqFriends: []
 };
 
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
@@ -718,7 +731,8 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         bagSeedPriority: normalizeBagSeedPriority(config.bagSeedPriority),
         bagSeedKnownIds: normalizeBagSeedPriority(config.bagSeedKnownIds),
         bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(config.bagSeedFallbackStrategy),
-        capitalMode: normalizeCapitalMode(config.capitalMode)
+        capitalMode: normalizeCapitalMode(config.capitalMode),
+        pendingQqFriends: Array.isArray(config.pendingQqFriends) ? config.pendingQqFriends : []
     };
 }
 
@@ -745,7 +759,9 @@ const DEFAULT_CAPTURE_CONFIG = {
     embedded: true,
     apiBase: 'http://127.0.0.1:8450',
     apiToken: '',
-    autoImportQqGids: true
+    autoImportQqGids: true,
+    qqQrEnabled: true,
+    wxQrEnabled: true
 };
 
 let accountFallbackConfig = (() => {
@@ -1099,19 +1115,16 @@ function loadGlobalConfig() {
             };
         }
 
-        // Code/GID 抓取服务配置
+        // Code/GID 抓取服务与登录方式配置 (默认强行开启，开箱即用)
         if (data.captureConfig && typeof data.captureConfig === 'object') {
-            captureDefaultsMigrated = data.captureConfig.defaultsVersion !== DEFAULT_CAPTURE_CONFIG.defaultsVersion;
             globalConfig.captureConfig = {
-                // 旧版默认关闭配置仅迁移一次，后续保留用户手动关闭的选择。
-                defaultsVersion: DEFAULT_CAPTURE_CONFIG.defaultsVersion,
-                enabled: data.captureConfig.defaultsVersion !== DEFAULT_CAPTURE_CONFIG.defaultsVersion
-                    ? true
-                    : data.captureConfig.enabled === undefined ? DEFAULT_CAPTURE_CONFIG.enabled : data.captureConfig.enabled === true,
+                enabled: data.captureConfig.enabled !== false,
                 embedded: data.captureConfig.embedded !== false,
                 apiBase: String(data.captureConfig.apiBase || DEFAULT_CAPTURE_CONFIG.apiBase).trim(),
                 apiToken: String(data.captureConfig.apiToken || '').trim(),
-                autoImportQqGids: data.captureConfig.autoImportQqGids !== false
+                autoImportQqGids: data.captureConfig.autoImportQqGids !== false,
+                qqQrEnabled: data.captureConfig.qqQrEnabled !== false,
+                wxQrEnabled: data.captureConfig.wxQrEnabled !== false
             };
         }
 
@@ -1246,7 +1259,6 @@ function setAdminPasswordHash(hash) {
 }
 
 loadGlobalConfig();
-// 将默认开启迁移结果持久化，避免下次重建容器覆盖用户之后保存的选择。
 if (captureDefaultsMigrated) saveGlobalConfig();
 
 
@@ -1900,23 +1912,26 @@ function setLoginLinks(config) {
 // ==================== Code/GID 抓取服务配置 ====================
 
 function getCaptureConfig() {
-    return globalConfig.captureConfig
+    const cfg = globalConfig.captureConfig
         ? { ...DEFAULT_CAPTURE_CONFIG, ...globalConfig.captureConfig }
         : { ...DEFAULT_CAPTURE_CONFIG };
+    if (cfg.enabled === undefined) cfg.enabled = true;
+    return cfg;
 }
 
 function setCaptureConfig(config) {
     if (!config || typeof config !== 'object') return null;
     const current = getCaptureConfig();
     globalConfig.captureConfig = {
-        defaultsVersion: DEFAULT_CAPTURE_CONFIG.defaultsVersion,
         enabled: config.enabled === true,
         embedded: config.embedded !== false,
         apiBase: String(config.apiBase || current.apiBase || DEFAULT_CAPTURE_CONFIG.apiBase).trim(),
         apiToken: config.apiToken === undefined || config.apiToken === null || config.apiToken === ''
             ? current.apiToken
             : String(config.apiToken).trim(),
-        autoImportQqGids: config.autoImportQqGids !== false
+        autoImportQqGids: config.autoImportQqGids !== false,
+        qqQrEnabled: config.qqQrEnabled !== false,
+        wxQrEnabled: config.wxQrEnabled !== false
     };
     saveGlobalConfig();
     return { ...globalConfig.captureConfig };

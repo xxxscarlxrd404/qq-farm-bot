@@ -167,7 +167,7 @@ function getPhaseResources(config, assets) {
     const resourcePath = pathInfo && pathInfo[0];
     // Crop_*_Seed 是背包物品图标；地块种子阶段由 model/v4/zhongzi 统一提供。
     // 各作物的地上生长资源从 _2 开始，_2.._6 对应发芽到成熟，_7 是枯萎。
-    const match = /^model\/v4\/((?:gold\/)?Crop_\d+)_([2-7])$/.exec(resourcePath || '');
+    const match = /^model\/v4\/(Crop_\d+)_([2-7])$/.exec(resourcePath || '');
     if (!match || !wanted.has(match[1])) continue;
     const uuidIndex = Number(uuidIndexText);
     const uuid = decodeUuid(config.uuids && config.uuids[uuidIndex]);
@@ -224,7 +224,7 @@ function downloadAstc(resource, configUrl, targetDir) {
   if (!resource.nativeHash) return null;
   const bundleBase = configUrl.replace(/config\.[^/]+\.json$/, '');
   const url = `${bundleBase}native/${resource.uuid.slice(0, 2)}/${resource.uuid}.${resource.nativeHash}.astc`;
-  const target = path.join(targetDir, `${resource.asset.replace(/\//g, '-')}-${resource.phase}.astc`);
+  const target = path.join(targetDir, `${resource.asset}-${resource.phase}.astc`);
   const result = spawnSync('curl', ['-L', '--fail', '--silent', '--show-error', '--output', target, url], { stdio: 'inherit' });
   return result.status === 0 && fs.existsSync(target) ? { url, localPath: target, lastTime: Date.now() } : null;
 }
@@ -418,8 +418,7 @@ function exportCachedSpinePlants(entries, output, manifest, wantedAssets) {
       console.log(`已导出 Spine：${plant.name} ${regionName} -> ${relative}`);
     }
     const seedImageDir = path.join(coreRoot, 'src', 'gameConfig', 'seed_images_named');
-    const fruitIcon = path.join(seedImageDir, `${plant.fruit?.id || plant.fruit_id}.png`);
-    const matureIcon = fs.existsSync(fruitIcon) ? fruitIcon : Number(plant.seed_id) > 0
+    const matureIcon = Number(plant.seed_id) > 0
       ? fs.readdirSync(seedImageDir)
         .filter(name => name.startsWith(`${plant.seed_id}_`) && name.includes(assetName) && /_Seed\.png$/i.test(name))
         .map(name => path.join(seedImageDir, name))[0] || ''
@@ -436,16 +435,6 @@ function exportCachedSpinePlants(entries, output, manifest, wantedAssets) {
       manifest[assetName][6] = `/game-config/plant_images/${relative.split(path.sep).join('/')}`;
       exported += 1;
       console.log(`已导出 Spine：${plant.name} 成熟静态回退帧 -> ${relative}`);
-    }
-    // 分件活动变异没有独立早期整图，显式复用基础作物的生长阶段。
-    const fallback = manifest[plant.phase_fallback_asset];
-    if (fallback) {
-      for (const phase of [2, 3, 4, 5]) {
-        if (!manifest[assetName]?.[phase] && fallback[phase]) {
-          manifest[assetName] ||= {};
-          manifest[assetName][phase] = fallback[phase];
-        }
-      }
     }
   }
   return exported;

@@ -102,7 +102,10 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   function selectAccount(id: string) {
-    currentAccountId.value = id
+    currentAccountId.value = String(id || '')
+    try {
+      localStorage.setItem('current_account_id', String(id || ''))
+    } catch {}
   }
 
   function setCurrentAccount(acc: Account) {
@@ -147,8 +150,25 @@ export const useAccountStore = defineStore('account', () => {
 
   async function addAccount(payload: any) {
     try {
-      await api.post('/api/accounts', payload)
+      const res = await api.post('/api/accounts', payload)
       await fetchAccounts()
+
+      const resList = Array.isArray(res.data?.data?.accounts) ? res.data.data.accounts : []
+      const newId = String(res.data?.targetAccountId || (resList.length > 0 ? resList[resList.length - 1].id : ''))
+      
+      if (newId) {
+        currentAccountId.value = newId
+        localStorage.setItem('current_account_id', newId)
+        const target = accounts.value.find(a => String(a.id) === newId)
+        if (target) {
+          setCurrentAccount(target)
+        }
+      } else if (accounts.value.length > 0) {
+        const last = accounts.value[accounts.value.length - 1]
+        currentAccountId.value = String(last.id)
+        localStorage.setItem('current_account_id', String(last.id))
+        setCurrentAccount(last)
+      }
     }
     catch (e) {
       console.error('添加账号失败', e)

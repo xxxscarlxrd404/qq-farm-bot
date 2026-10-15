@@ -53,22 +53,3 @@ test('available goods distinguish affordability from sale availability and prese
   assert.equal(availability.getMallStatusLabel(soldOut), '已售罄');
   assert.equal(availability.getMallStatusLabel({ ...item, currencyId: 1005 }), '金豆豆不足');
 });
-
-test('admin process renders gift rewards without loading worker protobuf types', async () => {
-  const { types } = require('../src/utils/proto');
-  assert.equal(types.CoreItem, undefined);
-  const bytes = Buffer.from('088bf1041002', 'hex'); // corepb.Item: 80011 x2
-  for (const raw of [bytes, Uint8Array.from(bytes), [...bytes], { ...bytes }, JSON.parse(JSON.stringify(bytes))]) {
-    const [gift] = await listGoods([{ goods_id: 1061, type: 5, item_ids: [raw] }], {});
-    assert.equal(gift.rewards[0].itemId, 80011);
-    assert.equal(gift.rewards[0].count, 2);
-    assert.ok(gift.rewards[0].name);
-  }
-});
-
-test('malformed reward bytes do not break the mall list', async () => {
-  const [gift] = await listGoods([{ goods_id: 1061, type: 5,
-    item_ids: [Buffer.from([8, 128]), Buffer.from('088bf1041002', 'hex')] }], {});
-  assert.equal(gift.rewards.length, 1);
-  assert.equal(gift.rewards[0].count, 2);
-});

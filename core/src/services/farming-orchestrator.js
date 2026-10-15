@@ -77,16 +77,16 @@ async function runFarmOperation(opType) {
   const labels = [];
 
   // 构建状态标签
-  if (analysis.harvestable.length) labels.push(`收:${  analysis.harvestable.length}`);
-  if (analysis.needWeed.length) labels.push(`草:${  analysis.needWeed.length}`);
-  if (analysis.needBug.length) labels.push(`虫:${  analysis.needBug.length}`);
-  if (analysis.needGoldenBug.length) labels.push(`金虫:${  analysis.needGoldenBug.length}`);
-  if (analysis.needWater.length) labels.push(`水:${  analysis.needWater.length}`);
-  if (analysis.dead.length) labels.push(`枯:${  analysis.dead.length}`);
-  if (analysis.empty.length) labels.push(`空:${  analysis.empty.length}`);
-  if (analysis.unlockable.length) labels.push(`解:${  analysis.unlockable.length}`);
-  if (analysis.upgradable.length) labels.push(`升:${  analysis.upgradable.length}`);
-  labels.push(`长:${  analysis.growing.length}`);
+  if (analysis.growing.length) labels.push(`作物:${analysis.growing.length}`);
+  if (analysis.harvestable.length) labels.push(`待收:${analysis.harvestable.length}`);
+  if (analysis.needWeed.length) labels.push(`长草:${analysis.needWeed.length}`);
+  if (analysis.needBug.length) labels.push(`有虫:${analysis.needBug.length}`);
+  if (analysis.needGoldenBug.length) labels.push(`黄金虫:${analysis.needGoldenBug.length}`);
+  if (analysis.needWater.length) labels.push(`缺水:${analysis.needWater.length}`);
+  if (analysis.dead.length) labels.push(`枯萎:${analysis.dead.length}`);
+  if (analysis.empty.length) labels.push(`空地:${analysis.empty.length}`);
+  if (analysis.unlockable.length) labels.push(`可解锁:${analysis.unlockable.length}`);
+  if (analysis.upgradable.length) labels.push(`可升级:${analysis.upgradable.length}`);
 
   const actions = [];
 
@@ -105,14 +105,23 @@ async function runFarmOperation(opType) {
       try {
         await farming(farmingLandIds);
         const parts = [];
-        if (!skipOwnWeedBug && analysis.needWeed.length > 0) parts.push(`草${analysis.needWeed.length}`);
-        if (!skipOwnWeedBug && analysis.needBug.length > 0) parts.push(`虫${analysis.needBug.length}`);
-        if (analysis.needWater.length > 0) parts.push(`水${analysis.needWater.length}`);
+        if (!skipOwnWeedBug && analysis.needWeed.length > 0) {
+          parts.push(`除草${analysis.needWeed.length}`);
+          recordOperation('weed', analysis.needWeed.length);
+        }
+        if (!skipOwnWeedBug && analysis.needBug.length > 0) {
+          parts.push(`杀虫${analysis.needBug.length}`);
+          recordOperation('bug', analysis.needBug.length);
+        }
+        if (analysis.needWater.length > 0) {
+          parts.push(`浇水${analysis.needWater.length}`);
+          recordOperation('water', analysis.needWater.length);
+        }
         if (goldenBugLandIds.length > 0) {
-          parts.push(`黄金虫${goldenBugLandIds.length}`);
+          parts.push(`清黄金虫${goldenBugLandIds.length}`);
           recordOperation('goldenBugClear', goldenBugLandIds.length);
         }
-        actions.push(`一键务农${parts.join('/')}`);
+        actions.push(parts.length > 0 ? `一键务农:${parts.join('/')}` : '一键务农');
         recordOperation('farming', farmingLandIds.length);
       } catch (err) { logWarn('一键务农', err.message); }
     }

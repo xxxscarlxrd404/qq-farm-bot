@@ -240,9 +240,14 @@ async function checkFriends(options = {}) {
 
     const blacklist = new Set(getFriendBlacklist(accountId));
     const dogInfoCache = readFriendDogInfoCache(accountId);
-    const guardDogGidSet = dogInfoCache
-      ? new Set(Object.keys(dogInfoCache).map(Number))
-      : new Set();
+    const guardDogGidSet = new Set();
+    if (dogInfoCache && typeof dogInfoCache === 'object') {
+      for (const [gidStr, dog] of Object.entries(dogInfoCache)) {
+        if (dog && Number(dog.dogId) === 90021) {
+          guardDogGidSet.add(Number(gidStr));
+        }
+      }
+    }
     const expLimitEnabled = !!isAutomationOn('friend_help_exp_limit');
     const helpExpReached = expLimitEnabled && !getCanGetHelpExp();
 
@@ -366,6 +371,22 @@ async function checkFriends(options = {}) {
           // Skip individual failures
         }
         await randomDelay(500, 1200);
+      }
+    } else if (stealTargets.length === 0 && helpTargets.length === 0 && rawFriends.length > 0) {
+      // 哪怕好友既无可偷也无需帮忙，也保底串门进入 1 位好友农场，完成每日“在1个好友农场进行互动”任务
+      const firstFriend = rawFriends.find(f => toNum(f.gid) !== userState.gid && !blacklist.has(toNum(f.gid)));
+      if (firstFriend) {
+        const fgid = toNum(firstFriend.gid);
+        const fname = firstFriend.remark || firstFriend.name || `GID:${fgid}`;
+        try {
+          const { enterFriendFarm, leaveFriendFarm } = require('./friend-api');
+          await enterFriendFarm(fgid);
+          await sleep(600);
+          await leaveFriendFarm(fgid);
+          log('好友', `日常串门互动: 拜访好友 [${fname}] 农场`, {
+            module: 'friend', event: '好友互动', result: 'ok', friendGid: fgid, friendName: fname
+          });
+        } catch (_) {}
       }
     }
 

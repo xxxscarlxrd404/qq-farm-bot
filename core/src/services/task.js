@@ -1,3 +1,87 @@
+
+/**
+ * 自动检测并完成成长任务中的【购买种子】任务（不做种植，只做购买）
+ */
+async function checkAndExecuteGrowthBuySeedTasks() {
+  if (!isAutomationOn('task') || !isConnected()) return;
+
+  try {
+    const reply = await getTaskInfo();
+    const taskInfo = reply && reply.task_info ? reply.task_info : {};
+    const growthTasks = buildGrowthTasks(taskInfo);
+
+    // 寻找未完成、已解锁且未领取的成长任务
+    for (const t of growthTasks) {
+      if (!t.is_unlocked || t.is_claimed) continue;
+      const progress = Math.max(0, toNum(t.progress));
+      const total = Math.max(0, toNum(t.total_progress));
+      if (total <= 0 || progress >= total) continue;
+
+      const desc = String(t.desc || '');
+      // 正则匹配：例如 "购买6个胡萝卜种子" 或 "购买 6 个 胡萝卜 种子"
+      const match = desc.match(/购买\s*(\d+)\s*个\s*([^种子\s]+)/);
+      if (!match) continue;
+
+      const targetCount = Number(match[1]) || total;
+      const plantName = match[2].trim();
+      const needCount = Math.max(0, targetCount - progress);
+      if (needCount <= 0) continue;
+
+      // 根据植物名称匹配种子与商品
+      const { getAllSeeds } = require('../config/gameConfig');
+      const allSeeds = getAllSeeds();
+      const matchedSeed = allSeeds.find(s => s.name === plantName || s.name.includes(plantName) || plantName.includes(s.name));
+      if (!matchedSeed) {
+        logWarn('任务', `成长任务未找到匹配的种子商品: ${plantName}`);
+        continue;
+      }
+
+      const seedId = Number(matchedSeed.seedId);
+      const { getSeedShopId, getShopInfo, buyGoods } = require('./farm-api');
+      const shopId = await getSeedShopId();
+      const shop = await getShopInfo(shopId);
+      const goods = (shop.goods_list || []).find(item => toNum(item.item_id) === seedId && item.unlocked);
+
+      if (!goods) {
+        logWarn('任务', `种子商店未找到商品: ${plantName}种子 (ID:${seedId})`);
+        continue;
+      }
+
+      const price = toNum(goods.price);
+      const { getUserState } = require('../utils/network');
+      const userState = getUserState();
+      const affordable = price > 0 ? Math.floor((userState.gold || 0) / price) : needCount;
+      const finalBuyCount = Math.min(needCount, affordable);
+
+      if (finalBuyCount <= 0) {
+        logWarn('任务', `金币不足，无法购买任务所需 ${plantName}种子 x${needCount}`);
+        continue;
+      }
+
+      log('任务', `检测到成长任务【${desc}】(当前进度:${progress}/${total})，正在自动购买 ${plantName}种子 x${finalBuyCount}...`, {
+        module: 'task', event: '成长任务购买', taskId: t.id, plantName, count: finalBuyCount,
+      });
+
+      await buyGoods(toNum(goods.id), finalBuyCount, price);
+      if (userState.gold) {
+        userState.gold = Math.max(0, userState.gold - finalBuyCount * price);
+      }
+
+      log('任务', `成功购买 ${plantName}种子 x${finalBuyCount}！任务已推进`, {
+        module: 'task', event: '成长任务购买完成', result: 'ok',
+      });
+
+      // 稍作等待后重新拉取并立即领取该任务奖励
+      await sleep(1000);
+      await checkAndClaimTasks();
+    }
+  } catch (err) {
+    if (!isTransientError(err)) {
+      logWarn('任务', `执行成长购买种子任务失败: ${err.message}`);
+    }
+  }
+}
+
 /**
  * 任务系统服务 - 每日任务、成长任务、活跃奖励自动领取
  *
@@ -20,6 +104,8 @@ const { getItemById } = require('../config/gameConfig');
 let checking = false;
 let taskClaimDoneDateKey = '';
 let taskClaimLastAt = 0;
+let cachedTaskInfo = null;
+let lastTaskInfoFetchedAt = 0;
 
 const taskScheduler = createScheduler('task');
 
@@ -59,12 +145,21 @@ function isTransientError(err) {
 
 // ---- RPC 调用 ----
 
-async function getTaskInfo() {
+async function getTaskInfo(force = false) {
+  const now = Date.now();
+  if (!force && cachedTaskInfo && now - lastTaskInfoFetchedAt < 15000) {
+    return { task_info: cachedTaskInfo };
+  }
   const request = types.TaskInfoRequest.encode(
     types.TaskInfoRequest.create({})
   ).finish();
   const { body } = await sendMsgAsync('gamepb.taskpb.TaskService', 'TaskInfo', request);
-  return types.TaskInfoReply.decode(body);
+  const reply = types.TaskInfoReply.decode(body);
+  if (reply && reply.task_info) {
+    cachedTaskInfo = reply.task_info;
+    lastTaskInfoFetchedAt = Date.now();
+  }
+  return reply;
 }
 
 async function claimTaskReward(taskId, doShared = false) {
@@ -72,7 +167,12 @@ async function claimTaskReward(taskId, doShared = false) {
     types.ClaimTaskRewardRequest.create({ id: toLong(taskId), do_shared: doShared })
   ).finish();
   const { body } = await sendMsgAsync('gamepb.taskpb.TaskService', 'ClaimTaskReward', request);
-  return types.ClaimTaskRewardReply.decode(body);
+  const reply = types.ClaimTaskRewardReply.decode(body);
+  if (reply && reply.task_info) {
+    cachedTaskInfo = reply.task_info;
+    lastTaskInfoFetchedAt = Date.now();
+  }
+  return reply;
 }
 
 /**
@@ -318,9 +418,8 @@ async function checkAndClaimIllustratedRewards() {
  * 领取单个任务
  */
 async function doClaim(task) {
-  try {
-    const doShare = task.shareMultiple > 1;
-    const shareLabel = doShare ? ` (${task.shareMultiple}倍)` : '';
+  const tryClaim = async (doShare) => {
+    const shareLabel = doShare ? ` (${task.shareMultiple || 2}倍)` : '';
     const result = await claimTaskReward(task.id, doShare);
     const items = result.items || [];
     const summary = items.length > 0 ? getRewardSummary(items) : '无';
@@ -332,12 +431,41 @@ async function doClaim(task) {
       module: 'task', event: '领取任务', result: 'ok', taskId: task.id, shared: doShare,
     });
 
+    task.isClaimed = true;
     taskClaimDoneDateKey = getDateKey();
     taskClaimLastAt = Date.now();
     recordOperation('taskClaim', 1);
     await sleep(300);
     return true;
-  } catch (_) {
+  };
+
+  const initialShare = task.shareMultiple > 1;
+  const isAlreadyClaimed = (e) => String(e && e.message || '').includes('1008002') || String(e && e.message || '').includes('已领取');
+
+  try {
+    return await tryClaim(initialShare);
+  } catch (err) {
+    if (isAlreadyClaimed(err)) {
+      task.isClaimed = true;
+      taskClaimDoneDateKey = getDateKey();
+      return true;
+    }
+    if (initialShare) {
+      logWarn('任务', `任务[${task.desc}]分享翻倍领取失败(${err.message})，正在尝试普通领取...`);
+      try {
+        await sleep(300);
+        return await tryClaim(false);
+      } catch (fallbackErr) {
+        if (isAlreadyClaimed(fallbackErr)) {
+          task.isClaimed = true;
+          taskClaimDoneDateKey = getDateKey();
+          return true;
+        }
+        logWarn('任务', `任务[${task.desc}]普通领取失败: ${fallbackErr.message}`);
+        return false;
+      }
+    }
+    logWarn('任务', `任务[${task.desc}]领取失败: ${err.message}`);
     return false;
   }
 }
@@ -402,6 +530,8 @@ async function checkAndClaimTasks() {
     await checkAndClaimActives(taskInfo.actives || []);
     // 图鉴奖励
     await checkAndClaimIllustratedRewards();
+    // 自动执行成长任务中的购买种子任务（只做购买）
+    await checkAndExecuteGrowthBuySeedTasks();
   } catch (err) {
     if (isTransientError(err)) return;
     logWarn('任务', `检查任务失败: ${err.message}`, {
@@ -419,6 +549,8 @@ async function checkAndClaimTasks() {
  */
 function onTaskInfoNotify(payload) {
   if (!payload) return;
+  cachedTaskInfo = payload;
+  lastTaskInfoFetchedAt = Date.now();
   if (!isAutomationOn('task')) return;
 
   const claimable = [
@@ -451,6 +583,10 @@ function initTaskSystem() {
   cleanupTaskSystem();
   networkEvents.on('taskInfoNotify', onTaskInfoNotify);
   taskScheduler.setTimeoutTask('task_init_bootstrap', 15000, () => {
+    checkAndClaimTasks();
+  });
+  // 周期性轮询领取每日/成长任务及活跃奖励（每 5 分钟自动扫描并静默领取）
+  taskScheduler.setIntervalTask('task_periodic_claim', 300000, () => {
     checkAndClaimTasks();
   });
 }

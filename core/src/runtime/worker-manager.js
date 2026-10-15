@@ -43,10 +43,7 @@ function createWorkerManager(deps) {
     // 按方法名的超时覆盖。萌宠日记单次操作要串行多次 RPC（读组 → 校验 → 操作 → 重读快照），
     // 10 秒默认值会误判超时，取值与上游一致。
     const METHOD_TIMEOUT_MS = {
-        // Milk tea mutations validate and refresh through multiple sequential RPCs.
-        getMilkTea: 90000,
-        operateMilkTea: 180000,
-        milkTeaRecords: 90000,
+        getDailyGiftOverview: 30000,
         getPetDiary: 90000,
         operatePetDiary: 180000,
         getPetDiaryRecords: 30000,
@@ -147,6 +144,44 @@ function createWorkerManager(deps) {
         }
 
         if (Object.keys(update).length <= 1) return;
+
+        // 【终极防重去重核心】：登录拿到真实 openId / gid / uin 之后，立即在全库排查重复账号！
+        const targetOpenId = profile.openId || worker.openId;
+        const targetGid = profile.gid || worker.gid;
+        const targetUin = profile.qq || worker.qq;
+
+        if (targetOpenId || targetGid || targetUin) {
+            try {
+                const accountsData = deps.store.getAccounts ? deps.store.getAccounts() : { accounts: [] };
+                const allList = Array.isArray(accountsData.accounts) ? accountsData.accounts : [];
+                const currentAcc = allList.find(a => String(a.id) === String(accountId));
+
+                for (const existing of allList) {
+                    if (String(existing.id) === String(accountId)) continue; // 跳过当前新账号
+                    
+                    const isSame = (targetOpenId && existing.openId && String(existing.openId) === String(targetOpenId))
+                        || (targetGid && existing.gid && String(existing.gid) === String(targetGid))
+                        || (targetUin && (existing.uin || existing.qq) && String(existing.uin || existing.qq) === String(targetUin));
+
+                    if (isSame) {
+                        const duplicateId = String(existing.id);
+                        // 1. 停用重复的老账号（防止老进程和新进程抢 Session 互踢）
+                        stopWorker(duplicateId);
+
+                        // 2. 彻底从数据库删除老账号（遵从指示：新添加账号采用全新配置，老账号干净清退）
+                        if (typeof deleteAccount === 'function') {
+                            deleteAccount(duplicateId);
+                        }
+
+                        if (onWorkerLog) {
+                            onWorkerLog('dedupe_cleaned', `农场账号已由新实例[#${accountId}]接管登录，已安全停用并清理老账号[#${duplicateId}]`, accountId, currentAcc ? currentAcc.name : '');
+                        }
+                    }
+                }
+            } catch (dedupeErr) {
+                console.error('[WorkerDedupe] 去重处理异常:', dedupeErr);
+            }
+        }
 
         addOrUpdateAccount(update);
         if (update.openId) worker.openId = update.openId;
@@ -425,6 +460,12 @@ function createWorkerManager(deps) {
         } else if (msg.type === 'task_permit_release') {
             activePermits.delete(`${accountId}:${String(msg.token || '')}`);
             drainPermitQueue();
+        } else if (msg.type === 'daily_gifts_sync') {
+            const currentWrk = workers[accountId];
+            if (currentWrk) {
+                if (!currentWrk.status) currentWrk.status = {};
+                currentWrk.status.dailyGifts = msg.data;
+            }
         } else if (msg.type === 'status_sync') {
             // 状态同步
             wrk.status = normalizeStatusForPanel(msg.data, accountId, wrk.name);

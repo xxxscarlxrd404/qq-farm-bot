@@ -29,96 +29,133 @@ onMounted(() => {
 /* Global styles */
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
-  line-height: 1.5;
-  font-optical-sizing: auto;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background: var(--app-bg);
+  background-image: var(--app-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--theme-text);
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
-/* Color theme variables */
+/* Color theme variables & Liquid Glass Design System */
 :root {
+  --app-bg-image: url('/bg-desktop.webp');
   --theme-bg: #f8fafc;
-  --theme-text: #172033;
+  --theme-text: #1e293b;
   --theme-primary: #3b82f6;
   --theme-secondary: #2563eb;
   --theme-gradient: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-  --app-bg: linear-gradient(180deg, #f6f8fb 0%, #eef3f8 100%);
-  --surface-1: color-mix(in srgb, var(--theme-bg) 8%, #ffffff);
-  --surface-2: color-mix(in srgb, var(--theme-bg) 22%, #ffffff);
-  --surface-3: color-mix(in srgb, var(--theme-bg) 40%, #ffffff);
-  --surface-border: rgba(15, 23, 42, 0.09);
-  --surface-border-strong: rgba(15, 23, 42, 0.14);
-  --surface-shadow: 0 16px 45px rgba(15, 23, 42, 0.08);
+  --app-bg: #eff6ff;
+
+  /* Liquid Glass Surfaces */
+  --liquid-glass-bg: rgba(255, 255, 255, 0.62);
+  --liquid-glass-bg-hover: rgba(255, 255, 255, 0.78);
+  --liquid-glass-border: rgba(255, 255, 255, 0.75);
+  --liquid-glass-border-subtle: rgba(255, 255, 255, 0.45);
+  --liquid-glass-shadow: 0 12px 36px 0 rgba(15, 23, 42, 0.08), inset 0 1px 1px 0 rgba(255, 255, 255, 0.85);
+  --liquid-glass-shadow-sm: 0 6px 20px 0 rgba(15, 23, 42, 0.05), inset 0 1px 1px 0 rgba(255, 255, 255, 0.75);
+  --liquid-glass-blur: blur(20px) saturate(180%);
+
+  --surface-1: rgba(255, 255, 255, 0.62);
+  --surface-2: rgba(255, 255, 255, 0.75);
+  --surface-3: rgba(255, 255, 255, 0.88);
+  --surface-border: rgba(255, 255, 255, 0.65);
+  --surface-border-strong: rgba(255, 255, 255, 0.85);
+  --surface-shadow: 0 16px 45px rgba(15, 23, 42, 0.09);
   --surface-shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.06);
   --muted-text: #64748b;
-  --input-bg: rgba(255, 255, 255, 0.84);
-  --panel-glow: color-mix(in srgb, var(--theme-primary) 14%, transparent);
-}
-
-.dark {
-  --app-bg:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--theme-primary) 16%, transparent) 0, transparent 28rem),
-    linear-gradient(180deg, #0b1020 0%, color-mix(in srgb, var(--theme-bg) 74%, #020617) 100%);
-  --surface-1: color-mix(in srgb, var(--theme-bg) 72%, #ffffff 9%);
-  --surface-2: color-mix(in srgb, var(--theme-bg) 78%, #ffffff 6%);
-  --surface-3: color-mix(in srgb, var(--theme-bg) 84%, #ffffff 4%);
-  --surface-border: rgba(255, 255, 255, 0.09);
-  --surface-border-strong: rgba(255, 255, 255, 0.14);
-  --surface-shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
-  --surface-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.24);
-  --muted-text: #9ca3af;
-  --input-bg: rgba(15, 23, 42, 0.54);
+  --input-bg: rgba(255, 255, 255, 0.72);
   --panel-glow: color-mix(in srgb, var(--theme-primary) 18%, transparent);
 }
 
+@media (max-width: 768px) {
+  :root {
+    --app-bg-image: url('/bg-mobile.webp');
+  }
+}
+
+.dark {
+  --liquid-glass-bg: rgba(15, 23, 42, 0.68);
+  --liquid-glass-bg-hover: rgba(30, 41, 59, 0.78);
+  --liquid-glass-border: rgba(255, 255, 255, 0.16);
+  --liquid-glass-border-subtle: rgba(255, 255, 255, 0.09);
+  --liquid-glass-shadow: 0 16px 45px 0 rgba(0, 0, 0, 0.45), inset 0 1px 1px 0 rgba(255, 255, 255, 0.18);
+  --liquid-glass-shadow-sm: 0 8px 24px 0 rgba(0, 0, 0, 0.35), inset 0 1px 1px 0 rgba(255, 255, 255, 0.14);
+  --liquid-glass-blur: blur(24px) saturate(180%);
+
+  --surface-1: rgba(15, 23, 42, 0.68);
+  --surface-2: rgba(30, 41, 59, 0.72);
+  --surface-3: rgba(51, 65, 85, 0.75);
+  --surface-border: rgba(255, 255, 255, 0.14);
+  --surface-border-strong: rgba(255, 255, 255, 0.22);
+  --surface-shadow: 0 18px 55px rgba(0, 0, 0, 0.45);
+  --surface-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.35);
+  --muted-text: #94a3b8;
+  --input-bg: rgba(15, 23, 42, 0.65);
+  --panel-glow: color-mix(in srgb, var(--theme-primary) 22%, transparent);
+}
+
 .app-root {
-  background: var(--app-bg);
+  background-image: var(--app-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
-/* SaaS surface system */
-.bg-white {
-  background-color: var(--surface-1) !important;
-}
-
-.dark .bg-gray-800,
-.dark .bg-gray-900 {
-  background-color: var(--surface-1) !important;
-}
-
-.bg-gray-50 {
-  background-color: var(--surface-2) !important;
-}
-
-.dark .bg-gray-700 {
-  background-color: var(--surface-3) !important;
-}
-
+/* Liquid Glass Cards & Panels */
 .ui-card {
-  border: 1px solid var(--surface-border);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 96%, #ffffff 4%), var(--surface-1));
-  box-shadow: var(--surface-shadow-soft);
+  position: relative;
+  background: var(--liquid-glass-bg);
+  backdrop-filter: var(--liquid-glass-blur);
+  -webkit-backdrop-filter: var(--liquid-glass-blur);
+  border: 1px solid var(--liquid-glass-border);
+  box-shadow: var(--liquid-glass-shadow);
+  border-radius: 18px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ui-card:hover {
+  border-color: var(--liquid-glass-border-strong, rgba(255, 255, 255, 0.9));
+  box-shadow: 0 16px 40px 0 rgba(15, 23, 42, 0.12), inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.95);
 }
 
 .ui-card-elevated {
-  border: 1px solid var(--surface-border);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 92%, #ffffff 8%), var(--surface-1));
-  box-shadow: var(--surface-shadow);
-}
-
-.ui-subtle-panel {
-  border: 1px solid var(--surface-border);
-  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  position: relative;
+  background: var(--liquid-glass-bg);
+  backdrop-filter: var(--liquid-glass-blur);
+  -webkit-backdrop-filter: var(--liquid-glass-blur);
+  border: 1px solid var(--liquid-glass-border);
+  box-shadow: var(--liquid-glass-shadow);
+  border-radius: 20px;
 }
 
 .glass-panel {
-  border: 1px solid var(--surface-border);
-  background: color-mix(in srgb, var(--surface-1) 78%, transparent);
-  backdrop-filter: blur(20px);
-  box-shadow: var(--surface-shadow-soft);
+  background: var(--liquid-glass-bg);
+  backdrop-filter: var(--liquid-glass-blur);
+  -webkit-backdrop-filter: var(--liquid-glass-blur);
+  border: 1px solid var(--liquid-glass-border);
+  box-shadow: var(--liquid-glass-shadow);
+  border-radius: 16px;
 }
 
+.ui-subtle-panel {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--liquid-glass-border-subtle);
+  border-radius: 14px;
+}
+
+.dark .ui-subtle-panel {
+  background: rgba(15, 23, 42, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Metric / Dashboard Card Spec */
 .metric-card {
   position: relative;
   overflow: hidden;
@@ -130,28 +167,56 @@ body {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(135deg, var(--panel-glow), transparent 42%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 34%);
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.35) 0%, transparent 45%),
+    linear-gradient(135deg, var(--panel-glow), transparent 60%);
+  border-radius: inherit;
+}
+
+.dark .metric-card::before {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.08) 0%, transparent 45%),
+    linear-gradient(135deg, var(--panel-glow), transparent 60%);
 }
 
 .metric-card > * {
   position: relative;
+  z-index: 1;
 }
 
-.shadow,
-.shadow-sm,
-.shadow-md {
-  box-shadow: var(--surface-shadow-soft) !important;
+/* Liquid Glass Buttons */
+.btn-primary,
+button.btn-primary {
+  position: relative;
+  background: var(--theme-gradient) !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow:
+    0 8px 24px color-mix(in srgb, var(--theme-primary) 32%, transparent),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.65) !important;
+  border-radius: 12px;
+  color: #ffffff !important;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
 }
 
-/* Use CSS variables for theme colors */
-.btn-primary {
-  background: var(--theme-gradient);
-  border-color: var(--theme-primary);
+.btn-primary:hover,
+button.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 12px 30px color-mix(in srgb, var(--theme-primary) 42%, transparent),
+    inset 0 1px 2px rgba(255, 255, 255, 0.8) !important;
+  filter: brightness(1.06);
 }
 
-.btn-primary:hover {
-  background: var(--theme-secondary);
+.btn-primary:active,
+button.btn-primary:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Liquid Glass Generic Button Styling */
+button:not(.btn-primary):not([class*="bg-"]):not([class*="text-"]):not([class*="p-0"]) {
+  transition: all 0.2s ease;
 }
 
 .text-primary {
@@ -172,8 +237,8 @@ body {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
@@ -181,12 +246,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--theme-primary) 50%, #94a3b8);
+  background: rgba(148, 163, 184, 0.45);
   border-radius: 999px;
+  backdrop-filter: blur(4px);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--theme-secondary);
-  opacity: 0.8;
+  background: color-mix(in srgb, var(--theme-primary) 65%, #94a3b8);
 }
 </style>

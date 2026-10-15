@@ -76,6 +76,36 @@ async function load() {
   }
 }
 
+const autoToggling = ref(false)
+
+async function toggleAutoBuyFood(val: boolean) {
+  const id = String(currentAccountId.value || '')
+  if (!id || autoToggling.value) return
+  autoToggling.value = true
+  try {
+    await petStore.setAutoConfig(id, { autoBuyFood: val })
+    toast.success(`自动买粮已${val ? '开启' : '关闭'}`)
+  } catch (e: any) {
+    toast.error(e?.response?.data?.error || e?.message || '设置失败')
+  } finally {
+    autoToggling.value = false
+  }
+}
+
+async function toggleAutoFeedDog(val: boolean) {
+  const id = String(currentAccountId.value || '')
+  if (!id || autoToggling.value) return
+  autoToggling.value = true
+  try {
+    await petStore.setAutoConfig(id, { autoFeedDog: val })
+    toast.success(`自动喂食已${val ? '开启' : '关闭'}`)
+  } catch (e: any) {
+    toast.error(e?.response?.data?.error || e?.message || '设置失败')
+  } finally {
+    autoToggling.value = false
+  }
+}
+
 async function action(run: () => Promise<any>, message: string) {
   try {
     await run()
@@ -177,9 +207,49 @@ onMounted(load)
                 {{ deployed?.desc || `已拥有 ${ownedCount} 只宠物` }}
               </p>
             </div>
-            <BaseButton v-if="deployed" variant="secondary" size="sm" :disabled="mutating" @click="action(() => petStore.withdraw(String(currentAccountId)), '宠物已召回')">
-              <span class="i-carbon-pause mr-1" />召回
-            </BaseButton>
+
+            <!-- 中间偏右：极简紧凑无图标胶囊开关（一列排列） -->
+            <div class="flex flex-col gap-1 shrink-0 self-center mr-1">
+              <!-- 自动买粮开关 -->
+              <label
+                class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/75 dark:bg-gray-800/75 border border-gray-200/60 dark:border-gray-700/60 shadow-sm cursor-pointer select-none transition-all hover:bg-white dark:hover:bg-gray-800"
+                title="12小时巡查检测：背包无狗粮且点券充足时，自动在商城购买狗粮礼包"
+              >
+                <span class="text-[10px] text-gray-500 dark:text-gray-400 font-medium">自动买粮</span>
+                <input
+                  type="checkbox"
+                  :checked="overview.autoBuyFood"
+                  :disabled="autoToggling"
+                  class="relative h-3 w-5 rounded-full bg-gray-300 dark:bg-gray-600 appearance-none cursor-pointer transition-colors duration-200 ease-in-out focus:outline-none checked:bg-amber-500 checked:hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:h-2 after:w-2 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:duration-200 checked:after:translate-x-2"
+                  @change="toggleAutoBuyFood(($event.target as HTMLInputElement).checked)"
+                />
+              </label>
+
+              <!-- 自动喂食开关 -->
+              <label
+                class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/75 dark:bg-gray-800/75 border border-gray-200/60 dark:border-gray-700/60 shadow-sm cursor-pointer select-none transition-all hover:bg-white dark:hover:bg-gray-800"
+                title="12小时巡查检测：守护剩余不足24小时且背包有狗粮时，自动喂食补充"
+              >
+                <span class="text-[10px] text-gray-500 dark:text-gray-400 font-medium">自动喂食</span>
+                <input
+                  type="checkbox"
+                  :checked="overview.autoFeedDog"
+                  :disabled="autoToggling"
+                  class="relative h-3 w-5 rounded-full bg-gray-300 dark:bg-gray-600 appearance-none cursor-pointer transition-colors duration-200 ease-in-out focus:outline-none checked:bg-emerald-500 checked:hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:h-2 after:w-2 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:duration-200 checked:after:translate-x-2"
+                  @change="toggleAutoFeedDog(($event.target as HTMLInputElement).checked)"
+                />
+              </label>
+            </div>
+
+            <!-- 最右侧：原版召回按钮稳稳保留 -->
+            <button
+              v-if="deployed"
+              class="rounded-xl border border-gray-200/80 bg-white/90 px-3.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition hover:bg-white hover:border-gray-300 active:scale-95 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-200 dark:hover:bg-gray-800 shrink-0 self-center"
+              :disabled="mutating"
+              @click="action(() => petStore.withdraw(String(currentAccountId)), '宠物已召回')"
+            >
+              <span class="i-carbon-pause mr-1 inline-block align-middle text-gray-500" />召回
+            </button>
           </div>
 
           <div class="flex shrink-0 items-center justify-between gap-3 px-3 pb-1 pt-3 sm:px-4">
@@ -391,7 +461,7 @@ onMounted(load)
               <strong class="block text-sm text-gray-900 font-medium dark:text-gray-100">启用资本模式</strong>
               <small class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">根据成熟时间自动安排守护</small>
             </span>
-            <BaseSwitch aria-label="启用宠物自动化" v-model="draft.enabled" :disabled="saving" />
+            <BaseSwitch v-model="draft.enabled" :disabled="saving" />
           </label>
 
           <div class="grid mt-5 gap-4 sm:grid-cols-2">

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const props = defineProps<{
+  accountId?: string | number
+}>()
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -17,6 +20,7 @@ const toastStore = useToastStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { items, loading: bagLoading, originalItems } = storeToRefs(bagStore)
 const { status, loading: statusLoading, error: statusError, realtimeConnected, currentStatusReady } = storeToRefs(statusStore)
+const activeAccountId = computed(() => String(props.accountId || activeAccountId.value || ''))
 
 const imageErrors = ref<Record<string | number, boolean>>({})
 const bagLoaded = ref(false)
@@ -32,6 +36,24 @@ const CATEGORY_OPTIONS = [
 type CategoryValue = typeof CATEGORY_OPTIONS[number]['value']
 
 const selectedCategory = ref<CategoryValue>('fruit')
+
+// 隔离的物品列表：优先从当前账号独立的背包槽位读取
+const accountItems = computed(() => {
+  const aid = activeAccountId.value
+  if (aid && bagStore.bagsByAccount && bagStore.bagsByAccount[aid]) {
+    const hiddenIds = new Set([1, 1001, 1002, 1101, 1011, 1012, 3001, 3002])
+    return bagStore.bagsByAccount[aid].items.filter((it: any) => !hiddenIds.has(Number(it.id || 0)))
+  }
+  return items.value
+})
+
+const accountOriginalItems = computed(() => {
+  const aid = activeAccountId.value
+  if (aid && bagStore.bagsByAccount && bagStore.bagsByAccount[aid]) {
+    return bagStore.bagsByAccount[aid].originalItems
+  }
+  return accountOriginalItems.value
+})
 
 function itemImage(item: any) {
   return item?.image || (Number(item?.id) === 6001 ? '/activity/wish-sign/firework.png' : '')
@@ -59,7 +81,7 @@ function getItemCategory(item: any): CategoryValue {
 const filteredItems = computed(() => {
   if (selectedCategory.value === 'all')
     return items.value
-  return items.value.filter((item: any) => getItemCategory(item) === selectedCategory.value)
+  return accountItems.value.filter((item: any) => getItemCategory(item) === selectedCategory.value)
 })
 
 const categoryCounts = computed(() => {
@@ -160,13 +182,13 @@ function handleUseClick(item: any) {
 
 async function handleConfirm() {
   const { action, item, selectedItems } = confirmModal.value
-  if (!currentAccountId.value)
+  if (!activeAccountId.value)
     return
 
   confirmModal.value.loading = true
   try {
     if (action === 'sell' && item) {
-      const sellItems = originalItems.value
+      const sellItems = accountOriginalItems.value
         .filter((it: any) => Number(it.id) === Number(item.id))
         .map((it: any) => ({ id: it.id, count: it.count, uid: it.uid || 0 }))
 
@@ -175,7 +197,7 @@ async function handleConfirm() {
         return
       }
 
-      const res = await bagStore.sellItems(currentAccountId.value, sellItems)
+      const res = await bagStore.sellItems(activeAccountId.value, sellItems)
       if (res.ok) {
         toastStore.success(`已出售 ${item.name || `物品${item.id}`}`)
         await loadBag()
@@ -185,7 +207,7 @@ async function handleConfirm() {
       }
     }
     else if (action === 'batchSell' && selectedItems) {
-      const itemsToSell = originalItems.value
+      const itemsToSell = accountOriginalItems.value
         .filter((it: any) => selectedItems.some((si: any) => Number(si.id) === Number(it.id)))
         .map((it: any) => ({ id: it.id, count: it.count, uid: it.uid || 0 }))
 
@@ -194,7 +216,7 @@ async function handleConfirm() {
         return
       }
 
-      const res = await bagStore.sellItems(currentAccountId.value, itemsToSell)
+      const res = await bagStore.sellItems(activeAccountId.value, itemsToSell)
       if (res.ok) {
         let totalGold = 0
         let totalGoldBean = 0
@@ -223,9 +245,9 @@ async function handleConfirm() {
       }
     }
     else if (action === 'use' && item) {
-      const sourceItem = originalItems.value.find((it: any) => Number(it.id) === Number(item.id))
+      const sourceItem = accountOriginalItems.value.find((it: any) => Number(it.id) === Number(item.id))
       const res = await bagStore.useItem(
-        currentAccountId.value,
+        activeAccountId.value,
         Number(item.id),
         Number(item.id) === 6001 ? 1 : Number(item.count || 1),
         Number(sourceItem?.uid || 0),
@@ -281,7 +303,7 @@ function handleBatchSellClick() {
     return
   }
 
-  const itemsToSell = originalItems.value
+  const itemsToSell = accountOriginalItems.value
     .filter((it: any) => selectedList.includes(Number(it.id)))
     .map((it: any) => ({ id: it.id, count: it.count, uid: it.uid || 0 }))
 
@@ -325,7 +347,7 @@ function handleBatchSellClick() {
 }
 
 async function loadBag() {
-  if (!currentAccountId.value)
+  if (!activeAccountId.value)
     return
 
   const acc = currentAccount.value
@@ -334,10 +356,10 @@ async function loadBag() {
 
   try {
     if (!realtimeConnected.value)
-      await statusStore.fetchStatus(currentAccountId.value)
+      await statusStore.fetchStatus(activeAccountId.value)
 
     if (acc.running)
-      await bagStore.fetchBag(currentAccountId.value)
+      await bagStore.fetchBag(activeAccountId.value)
   }
   finally {
     bagLoaded.value = true
@@ -350,11 +372,9 @@ const showInitialLoading = computed(() =>
   !bagLoaded.value && (bagLoading.value || statusLoading.value),
 )
 
-watch(currentAccountId, (newId, oldId) => {
+watch(activeAccountId, (newId, oldId) => {
   if (oldId !== undefined && newId !== oldId) {
     bagLoaded.value = false
-    bagStore.clearBag()
-    statusStore.clearAccountScopedData()
   }
   loadBag()
 }, { immediate: true })

@@ -633,7 +633,7 @@ async function handleBatchAddKnownFriendGids() {
 </script>
 
 <template>
-  <div class="p-4">
+  <div class="w-full space-y-4">
     <FriendsPageHeader
       v-model:search-keyword="searchKeyword"
       :active-tab="activeTab"
@@ -654,7 +654,7 @@ async function handleBatchAddKnownFriendGids() {
       <div class="i-svg-spinners-90-ring-with-bg text-4xl text-blue-500" />
     </div>
 
-    <div v-else-if="!currentAccountId" class="flex flex-col items-center justify-center gap-4 rounded-lg bg-white p-12 text-center text-gray-500 shadow dark:bg-gray-800">
+    <div v-else-if="!currentAccountId" class="flex flex-col items-center justify-center gap-4 ui-card rounded-2xl p-12 text-center text-gray-500">
       <div class="i-carbon-user-offline text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
@@ -666,7 +666,7 @@ async function handleBatchAddKnownFriendGids() {
       </div>
     </div>
 
-    <div v-else-if="currentAccountDisconnected && !hasAnyFriendData" class="flex flex-col items-center justify-center gap-4 rounded-lg bg-white p-12 text-center text-gray-500 shadow dark:bg-gray-800">
+    <div v-else-if="currentAccountDisconnected && !hasAnyFriendData" class="flex flex-col items-center justify-center gap-4 ui-card rounded-2xl p-12 text-center text-gray-500">
       <div class="i-carbon-connection-signal-off text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
@@ -694,7 +694,7 @@ async function handleBatchAddKnownFriendGids() {
           @open-batch-add="showBatchAddGidModal = true"
         />
 
-        <div v-if="friends.length === 0" class="rounded-lg bg-white p-8 text-center text-gray-500 shadow dark:bg-gray-800">
+        <div v-if="friends.length === 0" class="ui-card rounded-2xl p-8 text-center text-gray-500">
           <div class="i-carbon-user-multiple mx-auto mb-3 text-4xl text-gray-300" />
           <div class="text-base text-gray-700 font-medium dark:text-gray-200">
             暂无好友数据
@@ -705,7 +705,7 @@ async function handleBatchAddKnownFriendGids() {
         </div>
 
         <template v-else>
-          <div class="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 shadow dark:bg-gray-800">
+          <div class="ui-card flex flex-wrap items-center gap-2 rounded-2xl p-3">
             <button
               v-for="filter in dogFilters"
               :key="filter.key"
@@ -802,13 +802,13 @@ async function handleBatchAddKnownFriendGids() {
           </div>
         </div>
 
-        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+        <div class="ui-card rounded-2xl p-4">
           <p class="text-sm text-gray-500 dark:text-gray-400">
             加入黑名单的好友在自动偷菜和帮助时会被跳过。
           </p>
         </div>
 
-        <div v-if="blacklist.length === 0" class="rounded-lg bg-white p-8 text-center text-gray-500 shadow dark:bg-gray-800">
+        <div v-if="blacklist.length === 0" class="ui-card rounded-2xl p-8 text-center text-gray-500">
           <div class="i-carbon-list-blocked mx-auto mb-3 text-4xl text-gray-300" />
           <div class="text-base text-gray-700 font-medium dark:text-gray-200">
             暂无黑名单好友
@@ -822,7 +822,7 @@ async function handleBatchAddKnownFriendGids() {
           <div
             v-for="item in blacklist"
             :key="item.gid"
-            class="flex items-center justify-between rounded-lg bg-white p-4 shadow dark:bg-gray-800"
+            class="flex items-center justify-between ui-card rounded-2xl p-4"
           >
             <div class="flex items-center gap-3">
               <div class="h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-1 ring-gray-100 dark:bg-gray-600 dark:ring-gray-700">
@@ -915,7 +915,7 @@ async function handleBatchAddKnownFriendGids() {
           {{ interactError }}
         </div>
 
-        <div v-else-if="visibleInteractRecords.length === 0" class="rounded-lg bg-white p-8 text-center text-gray-500 shadow dark:bg-gray-800">
+        <div v-else-if="visibleInteractRecords.length === 0" class="ui-card rounded-2xl p-8 text-center text-gray-500">
           <div class="i-carbon-user-activity mx-auto mb-3 text-4xl text-gray-300" />
           <div class="text-base text-gray-700 font-medium dark:text-gray-200">
             暂无访客记录
@@ -929,7 +929,7 @@ async function handleBatchAddKnownFriendGids() {
           <div
             v-for="record in visibleInteractRecords"
             :key="record.key"
-            class="flex items-start gap-3 rounded-lg bg-white p-4 shadow dark:bg-gray-800"
+            class="flex items-start gap-3 ui-card rounded-2xl p-4"
           >
             <div class="h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-1 ring-gray-100 dark:bg-gray-700 dark:ring-gray-600">
               <img

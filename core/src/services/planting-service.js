@@ -938,7 +938,8 @@ async function autoPlantEmptyLands(deadLandIds, emptyLandIds, lands = []) {
 
   allEmptyLands = expandRemoved2x2Lands(allEmptyLands, deadLandIds, lands);
   const strategy = String(getPlantingStrategy(accountId) || '').trim();
-  const growthTaskPriorityEnabled = strategy === 'task_priority' || getPrioritizeGrowthTasks(accountId);
+  // 用户明确要求：只做购买任务，不做种植任务！因此彻底禁用自动成长任务抢地种植
+  const growthTaskPriorityEnabled = false;
   if (allEmptyLands.length && growthTaskPriorityEnabled) {
     try {
       const { getTaskInfo, buildGrowthTasks } = require('./task');

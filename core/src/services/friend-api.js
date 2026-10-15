@@ -28,6 +28,7 @@ const DOG_NAMES = {
   '90003': '斑点狗',
   '90011': '柯基',
   '90021': '护主犬',
+  '90031': '比熊犬',
 };
 
 // ===== State =====
@@ -389,8 +390,44 @@ async function bootstrapQqFriendGids() {
   hasBootstrappedQqFriendGids = true;
 
   const discovered = [];
-  const sourceCounts = { legacy: 0, applications: 0, visitors: 0 };
+  const sourceCounts = { napcat: 0, legacy: 0, applications: 0, visitors: 0 };
   const errors = [];
+
+  // 1. 优先尝试从 NapCat 扫码带过来的 pendingQqFriends 解析好友
+  try {
+    const pendingFriends = CONFIG.pendingQqFriends || [];
+    if (Array.isArray(pendingFriends) && pendingFriends.length > 0) {
+      const uins = pendingFriends.map(f => String(f.uin || f)).filter(Boolean);
+      if (uins.length > 0 && types.SyncAllRequest && types.SyncAllReply) {
+        log('好友', `正在将 NapCat 捕获的 ${uins.length} 位 QQ 好友同步至农场好友系统...`, {
+          module: 'friend',
+          event: 'NapCat好友同步',
+          count: uins.length,
+        });
+        const payload = types.SyncAllRequest.encode(
+          types.SyncAllRequest.create({ open_ids: uins })
+        ).finish();
+        const { body } = await sendMsgAsync(
+          'gamepb.friendpb.FriendService',
+          'SyncAll',
+          payload
+        );
+        const reply = types.SyncAllReply.decode(body);
+        const gameFriends = extractReplyFriends(reply);
+        sourceCounts.napcat = gameFriends.length;
+        discovered.push(...gameFriends.map(f => toNum(f && f.gid)));
+        log('好友', `NapCat QQ 好友同步完成：成功从游戏匹配出 ${gameFriends.length} 个农场好友`, {
+          module: 'friend',
+          event: 'NapCat好友同步完成',
+          result: 'ok',
+          count: gameFriends.length,
+        });
+      }
+    }
+  } catch (err) {
+    errors.push(`napcat: ${err.message}`);
+    logWarn('好友', `NapCat 关系链同步至农场失败: ${err.message}`);
+  }
 
   try {
     const friends = dedupeFriendsByGid(await fetchQqFriendsByLegacyMethod());

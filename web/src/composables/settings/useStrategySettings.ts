@@ -73,11 +73,17 @@ export function useStrategySettings({
     if (strategy === 'bag_priority' || strategy === 'task_priority') {
       strategy = localStrategySettings.value.bagSeedFallbackStrategy || 'level'
     }
-    if (!seeds.value || seeds.value.length === 0) {
+    const aid = String(currentAccountId.value || '')
+    if (!aid) {
       strategyPreviewLabel.value = null
       return
     }
-    const available = seeds.value.filter(s => !s.locked && !s.soldOut)
+    const accountSeeds = (farmStore.seedsByAccount && farmStore.seedsByAccount[aid]) || seeds.value || []
+    if (accountSeeds.length === 0) {
+      strategyPreviewLabel.value = null
+      return
+    }
+    const available = accountSeeds.filter((s: any) => !s.locked && !s.soldOut)
     if (available.length === 0) {
       strategyPreviewLabel.value = '暂无可用种子'
       return

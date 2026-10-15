@@ -34,8 +34,10 @@ const {
 } = require("./admin-account-runtime-routes");
 const { registerAdminAccountRoutes } = require("./admin-account-routes");
 const { registerAdminAnalyticsRoutes } = require("./admin-analytics-routes");
+const { registerAdminRankingRoutes } = require("./admin-ranking-routes");
 const { createAdminAccountAccess } = require("./admin-account-access");
 const { registerAdminAuthRoutes } = require("./admin-auth-routes");
+const { registerAdminUserManagementRoutes } = require("./admin-user-management-routes");
 const { registerAdminBagRoutes } = require("./admin-bag-routes");
 const { registerAdminCareerRoutes } = require("./admin-career-routes");
 const { registerAdminCaptureRoutes, setEmbeddedCapture } = require("./admin-capture-routes");
@@ -73,12 +75,19 @@ const DEFAULT_ALLOWED_ORIGINS = [
 const PUBLIC_API_PATHS = new Set([
   "/login",
   "/auto-login",
+  "/register",
+  "/public/renew",
+  "/public/reset-password/verify",
+  "/public/reset-password/confirm",
+  "/card-claim/status",
+  "/card-claim/claim",
   "/qr/create",
   "/qr/check",
   "/game-version",
   "/public/login-links",
   "/changelog",
   "/health",
+  "/activities/status",
 ]);
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const ONE_MINUTE_MS = 60 * 1000;
@@ -420,8 +429,66 @@ function startAdminServer(dataProvider) {
     createAdminSession,
     updateAdminSessions,
   });
+
   registerHealthRoute(app);
   registerAuthGate(app, requireAdminToken);
+  registerAdminUserManagementRoutes({
+    app,
+    adminRequired: adminRouteHelpers.adminRequired,
+    invalidateAdminSessions,
+    provider,
+    getAccountsForUser,
+  });
+
+  // ============ 定时巡查与到期账号自动熔断释放内存 ============
+  function sweepExpiredUsersAndStopWorkers() {
+    try {
+      const now = Date.now();
+      const allUsers = typeof userStore.getAllUsers === 'function' ? userStore.getAllUsers() : [];
+      const expiredUsernames = [];
+
+      for (const u of allUsers) {
+        if (u.role === 'admin' || u.role === 'super_admin') continue;
+        if (u.card && u.card.expiresAt && u.card.expiresAt < now) {
+          expiredUsernames.push(u.username);
+        }
+      }
+
+      if (expiredUsernames.length > 0) {
+        // 1. 踢出这些用户的在线 Session
+        if (typeof invalidateAdminSessions === 'function') {
+          invalidateAdminSessions((session) => expiredUsernames.includes(session.username));
+        }
+
+        // 2. 停用这些用户名下正在运行的农场 Worker 实例，彻底释放服务器内存和 CPU
+        const allAccounts = typeof getAccountsForUser === 'function' ? getAccountsForUser() : [];
+        for (const username of expiredUsernames) {
+          const userAccounts = allAccounts.filter(a => a.username === username);
+          for (const acc of userAccounts) {
+            if (provider && typeof provider.isAccountRunning === 'function' && provider.isAccountRunning(acc.id)) {
+              if (typeof provider.stopAccount === 'function') {
+                provider.stopAccount(acc.id);
+                if (provider.addAccountLog) {
+                  provider.addAccountLog(
+                    'expired_auto_stop',
+                    `用户【${username}】授权已到期，系统已自动停止农场挂机实例并释放内存`,
+                    String(acc.id),
+                    acc.name || String(acc.id),
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      adminLogger.warn(`过期账号自动熔断巡查异常: ${err.message}`);
+    }
+  }
+
+  // 服务启动后 15 秒执行初次清理，之后每 5 分钟自动巡查一次
+  setTimeout(sweepExpiredUsersAndStopWorkers, 15000);
+  setInterval(sweepExpiredUsersAndStopWorkers, 5 * 60 * 1000);
   registerRequestTimeoutGuard(app);
   registerAdminPublicInfoRoutes({
     app,
@@ -520,6 +587,7 @@ function startAdminServer(dataProvider) {
     sendProviderError,
   });
   registerAdminAnalyticsRoutes({ app });
+  registerAdminRankingRoutes({ app, store, provider });
   registerAdminSettingsRoutes({
     app,
     provider,
@@ -541,7 +609,8 @@ function startAdminServer(dataProvider) {
     getRuntimeConfig,
     updateRuntimeConfig,
   });
-  adminLogger.info("抓包服务默认关闭，未随管理面板启动运行");
+    // 抓包服务默认随应用启动嵌入运行（监听 18000 端口）
+  ensureEmbeddedCaptureService();
   registerAdminCaptureRoutes({
     app,
     store,
@@ -554,7 +623,6 @@ function startAdminServer(dataProvider) {
     resolveAccountReference,
     ensureEmbeddedCaptureService,
     stopEmbeddedCaptureService,
-    updateRuntimeConfig,
   });
   registerAdminCurrentUserRoutes({
     app,
@@ -581,7 +649,7 @@ function startAdminServer(dataProvider) {
     updateRuntimeConfig,
   });
   registerAdminQrLoginRoutes({ app });
-  registerAdminNapcatLoginRoutes({ app });
+  registerAdminNapcatLoginRoutes({ app, store });
   registerAdminProxyRoutes({ app, logger: adminLogger });
   registerSpaFallback(app, webDist);
 
@@ -594,7 +662,7 @@ function startAdminServer(dataProvider) {
     const token = socket.data.adminToken;
     const session = token ? getAdminSession(token) : null;
 
-    if (accountId && session && !hasElevatedAdminRole(session)) {
+    if (accountId && session) {
       const accounts = getAccountsForUser();
       const account = accounts.find((item) => item.id === accountId);
       if (!account || account.username !== session.username) {
@@ -644,7 +712,10 @@ function startAdminServer(dataProvider) {
           const accessibleAccountIds = getAccessibleAccountIdsForUser(socketUser);
           logs = logs.filter((logEntry) => {
             const logAccountId = logEntry.accountId || logEntry.id;
-            if (!logAccountId) return true;
+            // 仅对明确属于该用户账号的日志放行；如果该用户尚未添加账号，不推送系统启动日志，避免空白账号产生误导
+            if (!logAccountId) {
+              return accessibleAccountIds.length > 0 && socketUser.role === 'admin';
+            }
             return accessibleAccountIds.includes(logAccountId);
           });
         }

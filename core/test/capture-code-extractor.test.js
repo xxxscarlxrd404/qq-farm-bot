@@ -112,13 +112,3 @@ test('scanJsonBody finds nested code fields', () => {
   assert.equal(result.code, 'nested-code');
   assert.equal(result.openId, 'nested-openid');
 });
-
-test('captures a validated gateway version with the login code', () => {
-  const read = (host, version) => extractLoginInfo({
-    host, config: DEFAULT_CONFIG,
-    head: Buffer.from(`GET /prod/ws?code=ABC123&ver=${version} HTTP/1.1\r\nUpgrade: websocket\r\n\r\n`),
-  });
-  assert.equal(read('gate-obt.nqf.qq.com', '1.14.2.15_20260922').clientVersion, '1.14.2.15_20260922');
-  assert.equal(read('gate-obt.nqf.qq.com', 'invalid').clientVersion, undefined);
-  assert.equal(read('q.qq.com', '1.14.2.15_20260922').clientVersion, undefined);
-});

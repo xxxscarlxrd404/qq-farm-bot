@@ -16,6 +16,8 @@ export interface CaptureConfig {
   apiToken: string
   tokenConfigured: boolean
   autoImportQqGids: boolean
+  qqQrEnabled?: boolean
+  wxQrEnabled?: boolean
 }
 
 export interface LoginLinks {
@@ -39,13 +41,15 @@ const defaultSystemConfigValues: SystemConfig = {
 }
 
 const defaultCaptureConfig: CaptureConfig = {
-  enabled: true,
+  enabled: false,
   embedded: true,
   running: false,
   apiBase: 'http://127.0.0.1:8450',
   apiToken: '',
   tokenConfigured: false,
   autoImportQqGids: true,
+  qqQrEnabled: true,
+  wxQrEnabled: true,
 }
 
 const defaultLoginLinks: LoginLinks = {

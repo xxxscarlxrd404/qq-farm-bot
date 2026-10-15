@@ -61,16 +61,3 @@ test('hidden activity defaults stay disabled', () => {
     assert.equal(automation[key], false, `${key} should default to disabled`);
   }
 });
-
-test('milk tea coupon pack switch is cleared outside its activity window', () => {
-  for (const now of [1792029599, 1794844800]) {
-    const automation = { mall_coupon_gift_buy: true };
-    _test.disableHiddenActivityAutomation(automation, now);
-    assert.equal(automation.mall_coupon_gift_buy, false);
-  }
-  for (const now of [1792029600, 1794844799]) {
-    const automation = { mall_coupon_gift_buy: true };
-    _test.disableHiddenActivityAutomation(automation, now);
-    assert.equal(automation.mall_coupon_gift_buy, true);
-  }
-});

@@ -196,29 +196,31 @@ function createReloginReminderService(deps) {
   }
 
   async function sendSmtpReminder(cfg, accountId, accountName, reason, offlineMs) {
-    const smtpHost = String(cfg.smtpHost || '').trim();
-    const smtpPort = Number(cfg.smtpPort) || 465;
-    const smtpUser = String(cfg.smtpUser || '').trim();
-    const smtpPass = String(cfg.smtpPass || '').trim();
-    const senderName = String(cfg.senderName || '').trim();
+    // 继承系统管理员配置的全局发信 SMTP
+    const globalSmtp = store.getOfflineReminder ? (store.getOfflineReminder() || {}) : {};
+    const smtpHost = String(cfg.smtpHost || globalSmtp.smtpHost || '').trim();
+    const smtpPort = Number(cfg.smtpPort || globalSmtp.smtpPort) || 465;
+    const smtpUser = String(cfg.smtpUser || globalSmtp.smtpUser || '').trim();
+    const smtpPass = String(cfg.smtpPass || globalSmtp.smtpPass || '').trim();
+    const senderName = String(cfg.senderName || globalSmtp.senderName || 'QQ农场助手监控中心').trim();
     const recipientEmail = String(cfg.recipientEmail || '').trim();
-    const emailContent = String(cfg.emailContent || cfg.msg || '').trim();
 
-    if (!smtpHost || !smtpUser || !smtpPass || !recipientEmail) {
-      log('错误',
-        `下线提醒SMTP配置不完整: ` +
-        `host=${  smtpHost ? '已设置' : '未设置' 
-        }, user=${  smtpUser ? '已设置' : '未设置' 
-        }, pass=${  smtpPass ? '已设置' : '未设置' 
-        }, recipient=${  recipientEmail ? '已设置' : '未设置'}`);
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      log('错误', '系统管理员未在后台系统配置中设置全局发信邮箱 (SMTP)，跳过发信');
+      return;
+    }
+    if (!recipientEmail) {
+      log('提示', `账号【${accountName || accountId}】未设置接收提醒邮箱，跳过通知`);
       return;
     }
 
     const minutes = Math.floor((Number(offlineMs) || 0) / 60000);
-    const title = String(cfg.title || '账号下线提醒').trim();
-    let content = accountName ? `${accountName  }\n${  emailContent}` : emailContent;
-    if (reason) content += `\n原因: ${  reason}`;
-    if (minutes > 0) content += `\n离线时长: ${  minutes  } 分钟`;
+    const title = `[QQ农场] 您的账号【${accountName || accountId}】已离线`;
+    let content = `尊敬的农场主：\n您的农场账号【${accountName || accountId}】已于当前时间离线。`;
+    if (reason) content += `\n离线原因: ${reason}`;
+    if (minutes > 0) content += `\n离线时长: ${minutes} 分钟`;
+    content += `\n发送时间: ${new Date().toLocaleString('zh-CN', { hour12: false })}`;
+    content += `\n提示: 请尽快登录控制面板重新扫码或运行账号。`;
     content = await appendReloginContent(content, cfg.reloginUrlMode, accountId, accountName);
 
     const ret = await sendSmtpEmail({
@@ -239,12 +241,16 @@ function createReloginReminderService(deps) {
     const channel = String(cfg.channel || '').trim().toLowerCase();
     const endpoint = String(cfg.endpoint || '').trim();
     const token = String(cfg.token || '').trim();
-    const baseTitle = String(cfg.title || '账号下线提醒').trim();
-    const title = accountName ? `${baseTitle  } ${  accountName}` : baseTitle;
-    let content = String(cfg.msg || '账号下线').trim();
+    const title = `[QQ农场] 您的账号【${accountName || accountId}】已离线`;
+    let content = `尊敬的农场主：\n您的农场账号【${accountName || accountId}】已离线。`;
+    if (reason) content += `\n离线原因: ${reason}`;
+    const minutes = Math.floor((Number(offlineMs) || 0) / 60000);
+    if (minutes > 0) content += `\n离线时长: ${minutes} 分钟`;
+    content += `\n发送时间: ${new Date().toLocaleString('zh-CN', { hour12: false })}`;
+    content += `\n提示: 请尽快登录控制面板重新扫码或运行账号。`;
 
-    if (!channel || !title || !content) {
-      log('错误', `下线提醒配置不完整: channel=${  channel  }, title=${  title  }, content=${  content}`);
+    if (!channel || !token) {
+      log('错误', `下线提醒配置不完整: channel=${channel}, token=未设置`);
       return;
     }
     if (channel !== 'webhook' && !token) {
@@ -256,9 +262,7 @@ function createReloginReminderService(deps) {
       return;
     }
 
-    const minutes = Math.floor((Number(offlineMs) || 0) / 60000);
-    if (reason) content += `\n原因: ${  reason}`;
-    if (minutes > 0) content += `\n离线时长: ${  minutes  } 分钟`;
+
     content = await appendReloginContent(content, cfg.reloginUrlMode, accountId, accountName);
 
     const ret = await sendPushooMessage({ channel, endpoint, token, title, content });

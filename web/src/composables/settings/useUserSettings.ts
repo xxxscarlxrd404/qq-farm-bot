@@ -25,7 +25,36 @@ const DEFAULT_DEVICE_PROTOCOL: DeviceProtocolConfig = {
   imei: '',
 }
 
-const DEVICE_PROTOCOL_PRESETS = [
+export function generateRandomMac() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6))
+  bytes[0] = ((bytes[0] ?? 0) & 0xFC) | 0x02
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0').toUpperCase()).join(':')
+}
+
+export function generateRandomDeviceId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(8))
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0').toUpperCase()).join('')
+}
+
+export function generateRandomImei() {
+  let p = ''
+  for (; p.length < 14;) {
+    const bytes = crypto.getRandomValues(new Uint8Array(14 - p.length))
+    for (const b of bytes) {
+      if (b < 250) p += String(b % 10)
+    }
+  }
+  const digits = p.split('').map(Number)
+  let sum = 0
+  digits.forEach((digit, index) => {
+    const value = index % 2 === 1 ? digit * 2 : digit
+    sum += value > 9 ? value - 9 : value
+  })
+  const check = (10 - (sum % 10)) % 10
+  return `${p}${check}`
+}
+
+export const DEVICE_PROTOCOL_PRESETS = [
   {
     label: 'iPhone 17',
     value: 'iphone_17',

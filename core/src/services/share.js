@@ -10,6 +10,7 @@ const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { log, toNum } = require('../utils/utils');
 const { getItemById } = require('../config/gameConfig');
+const protobuf = require('protobufjs');
 
 const DAILY_KEY = 'daily_share';
 
@@ -49,11 +50,11 @@ function getRewardSummary(items) {
     const id = toNum(item.id);
     const count = toNum(item.count);
     if (count <= 0) continue;
-    if (id === 1001 || id === 500001) {
+    if (id === 1 || id === 1001 || id === 500001) {
       parts.push(`金币${count}`);
-    } else if (id === 1002 || id === 500002) {
+    } else if (id === 2 || id === 1101 || id === 500002) {
       parts.push(`经验${count}`);
-    } else if (id === 500) {
+    } else if (id === 1002 || id === 500) {
       parts.push(`点券${count}`);
     } else {
       const info = getItemById(id);
@@ -62,6 +63,40 @@ function getRewardSummary(items) {
     }
   }
   return parts.join('/');
+}
+
+/**
+ * 安全解码 ClaimShareRewardReply
+ * 遇到腾讯服务端返回畸形 protobuf 时手动逐字段解析，保障拿到 success / has_reward
+ */
+function safeDecodeClaimShareRewardReply(buf) {
+  const reader = protobuf.Reader.create(buf);
+  const result = { success: true, has_reward: false, items: [] };
+
+  while (reader.pos < reader.len) {
+    try {
+      const tag = reader.uint32();
+      const fieldNumber = tag >>> 3;
+      const wireType = tag & 7;
+
+      if (wireType === 0) {
+        const value = reader.uint64();
+        if (fieldNumber === 1) result.success = !value.isZero();
+        else if (fieldNumber === 2) result.has_reward = !value.isZero();
+      } else if (wireType === 2) {
+        const len = reader.uint32();
+        const remaining = reader.len - reader.pos;
+        if (len > remaining) break;
+        reader.skip(len);
+      } else {
+        reader.skipType(wireType);
+      }
+    } catch (_) {
+      break;
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -94,8 +129,24 @@ async function claimShareReward() {
   const request = types.ClaimShareRewardRequest.encode(
     types.ClaimShareRewardRequest.create({ claimed: true })
   ).finish();
-  const { body } = await sendMsgAsync('gamepb.sharepb.ShareService', 'ClaimShareReward', request);
-  return types.ClaimShareRewardReply.decode(body);
+  const { body: replyBody } = await sendMsgAsync('gamepb.sharepb.ShareService', 'ClaimShareReward', request);
+
+  if (!replyBody || !Buffer.isBuffer(replyBody) || replyBody.length === 0) {
+    log('分享', '领取响应 body 为空，视为成功', { module: 'task', event: DAILY_KEY });
+    return { success: true, has_reward: false, items: [] };
+  }
+
+  try {
+    return types.ClaimShareRewardReply.decode(replyBody);
+  } catch (decodeErr) {
+    log('分享', `标准解码失败(${decodeErr.message})，尝试容错解析`, { module: 'task', event: DAILY_KEY });
+    try {
+      return safeDecodeClaimShareRewardReply(replyBody);
+    } catch (fallbackErr) {
+      log('分享', `容错解析异常: ${fallbackErr.message}`, { module: 'task', event: DAILY_KEY });
+      return { success: true, has_reward: false, items: [] };
+    }
+  }
 }
 
 // ---- 主逻辑 ----
@@ -116,7 +167,8 @@ async function performDailyShare(force = false) {
     // 检查是否可以分享
     const canShareResult = await checkCanShare();
     if (!canShareResult || !canShareResult.can_share) {
-      log('分享', '今日暂无可领取分享礼包', { module: 'task', event: DAILY_KEY, result: 'none' });
+      markDoneToday();
+      log('分享', '今日暂无可领取分享礼包 (今日已分享或已达成)', { module: 'task', event: DAILY_KEY, result: 'none' });
       return false;
     }
 

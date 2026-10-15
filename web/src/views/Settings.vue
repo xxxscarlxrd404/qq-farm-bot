@@ -9,6 +9,8 @@ import AccountSettingsTab from '@/components/settings/AccountSettingsTab.vue'
 import AutoCodeRefreshCard from '@/components/settings/AutoCodeRefreshCard.vue'
 import DeviceProtocolCard from '@/components/settings/DeviceProtocolCard.vue'
 import OfflineReminderCard from '@/components/settings/OfflineReminderCard.vue'
+import UserEmailNotificationCard from '@/components/settings/UserEmailNotificationCard.vue'
+import AdminSmtpConfigCard from '@/components/admin/AdminSmtpConfigCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountSettings } from '@/composables/settings/useAccountSettings'
 import { useAutomationSettings } from '@/composables/settings/useAutomationSettings'
@@ -16,8 +18,12 @@ import { useStrategySettings } from '@/composables/settings/useStrategySettings'
 import { useUserSettings } from '@/composables/settings/useUserSettings'
 import { useAdminSystemConfig } from '@/composables/useAdminSystemConfig'
 import { useSettingStore } from '@/stores/setting'
+import { useStatusStore } from '@/stores/status'
+import { useUserStore } from '@/stores/user'
 
 const settingStore = useSettingStore()
+const statusStore = useStatusStore()
+const userStore = useUserStore()
 const route = useRoute()
 
 type SettingsTabKey = 'account' | 'account-config' | 'notification' | 'system'
@@ -33,16 +39,21 @@ const LEGACY_SETTINGS_TABS: Record<string, SettingsTabKey> = {
 
 function getInitialSettingsTab(): SettingsTabKey {
   const requested = String(route.query.tab || '')
+  let target: SettingsTabKey = 'account'
   if (LEGACY_SETTINGS_TABS[requested])
-    return LEGACY_SETTINGS_TABS[requested]
-  if (SETTINGS_TAB_KEYS.includes(requested as SettingsTabKey))
-    return requested as SettingsTabKey
-  const saved = localStorage.getItem('settings-active-tab')
-  if (saved && LEGACY_SETTINGS_TABS[saved])
-    return LEGACY_SETTINGS_TABS[saved]
-  return SETTINGS_TAB_KEYS.includes(saved as SettingsTabKey)
-    ? saved as SettingsTabKey
-    : 'account'
+    target = LEGACY_SETTINGS_TABS[requested]
+  else if (SETTINGS_TAB_KEYS.includes(requested as SettingsTabKey))
+    target = requested as SettingsTabKey
+  else {
+    const saved = localStorage.getItem('settings-active-tab')
+    if (saved && LEGACY_SETTINGS_TABS[saved])
+      target = LEGACY_SETTINGS_TABS[saved]
+    else if (SETTINGS_TAB_KEYS.includes(saved as SettingsTabKey))
+      target = saved as SettingsTabKey
+  }
+  if (target === 'system')
+    return 'account'
+  return target
 }
 
 const activeTab = ref<SettingsTabKey>(getInitialSettingsTab())
@@ -55,16 +66,32 @@ async function scrollActiveTabIntoView() {
 }
 
 watch(activeTab, (newTab) => {
+  if (newTab === 'system') {
+    activeTab.value = 'account'
+    return
+  }
   localStorage.setItem('settings-active-tab', newTab)
   void scrollActiveTabIntoView()
 })
 
-const tabs = [
-  { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
-  { key: 'account-config', label: '账号设置', icon: 'i-carbon-settings-adjust' },
-  { key: 'notification', label: '通知设置', icon: 'i-carbon-notification' },
-  { key: 'system', label: '系统配置', icon: 'i-carbon-settings-services' },
-] as const
+/* const tabs = computed(() => [
+  { key: 'account' as SettingsTabKey, label: '账号管理', icon: 'i-carbon-user-settings' },
+  { key: 'account-config' as SettingsTabKey, label: '账号设置', icon: 'i-carbon-settings-adjust' },
+  { key: 'notification' as SettingsTabKey, label: '通知设置', icon: 'i-carbon-notification' },
+]) */
+
+const showDrawerModal = ref(false)
+const drawerActiveTab = ref<'account-config' | 'notification'>('account-config')
+
+function openDrawer(tab: 'account-config' | 'notification', account?: any) {
+  if (account) selectAccount(account)
+  drawerActiveTab.value = tab
+  showDrawerModal.value = true
+}
+
+function closeDrawer() {
+  showDrawerModal.value = false
+}
 
 const modalVisible = ref(false)
 const defaultPlanSettingId = ref('')
@@ -199,6 +226,16 @@ const {
   showAlert,
 })
 
+const isCurrentAccountWx = computed(() => {
+  const acc = (accounts.value || []).find((a: any) => String(a.id) === String(currentAccountId.value || ''))
+  return (acc?.platform || '').toLowerCase() === 'wx'
+})
+
+async function onAutoCodeRefreshToggle(val: boolean) {
+  localAutoCodeRefresh.value.enabled = val
+  await saveAutoCodeRefreshSettings()
+}
+
 const accountSettingsSaving = ref(false)
 const autoCodeRefreshSaving = ref(false)
 const systemSettingsSaving = ref(false)
@@ -251,8 +288,11 @@ async function saveAutoCodeRefreshSettings() {
 }
 
 function openAccountSettings(account: any) {
-  selectAccount(account)
-  activeTab.value = 'account-config'
+  if (account) {
+    selectAccount(account)
+    resetStrategyState()
+  }
+  openDrawer('account-config', account)
 }
 
 async function saveSystemSettings() {
@@ -359,7 +399,12 @@ function confirmDefaultPlanOperation() {
 watch(currentAccountId, async () => {
   settingStore.clearSettingsState()
   resetStrategyState()
+  statusStore.clearAccountScopedData()
+  const farmStore = (await import('@/stores/farm')).useFarmStore()
+  farmStore.clearFarmData()
   if (currentAccountId.value) {
+    statusStore.fetchStatus(String(currentAccountId.value))
+    statusStore.fetchDailyGifts(String(currentAccountId.value))
     await loadStrategyData()
     syncLocalAutomationSettings()
     syncLocalOfflineSettings()
@@ -367,7 +412,9 @@ watch(currentAccountId, async () => {
 })
 
 onMounted(async () => {
-  await Promise.all([loadSystemConfig(), loadCaptureConfig()])
+  if (userStore.isAdmin) {
+    await Promise.all([loadSystemConfig(), loadCaptureConfig()])
+  }
   await fetchAccounts()
   await fetchDeviceProtocol()
   selectFirstAccountIfNeeded()
@@ -382,33 +429,10 @@ onMounted(async () => {
 
 <template>
   <div class="settings-page">
-    <div class="mb-4">
-      <h1 class="text-2xl text-gray-900 font-bold dark:text-gray-100">
-        设置
-      </h1>
-    </div>
 
-    <div class="border border-gray-200 rounded-lg bg-white shadow dark:border-gray-700 dark:bg-gray-800">
-      <div class="border-b border-gray-200 dark:border-gray-700">
-        <nav ref="settingsTabsNav" class="flex gap-1 overflow-x-auto p-2">
-          <button
-            v-for="tab in tabs"
-            :key="tab.key"
-            :data-settings-tab="tab.key"
-            class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all"
-            :class="activeTab === tab.key
-              ? 'text-white shadow-sm'
-              : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'"
-            :style="activeTab === tab.key ? { backgroundColor: 'var(--theme-primary)' } : {}"
-            @click="activeTab = tab.key"
-          >
-            <div :class="tab.icon" />
-            {{ tab.label }}
-          </button>
-        </nav>
-      </div>
 
-      <div class="p-4">
+    <div class="liquid-card relative overflow-hidden rounded-2xl p-4 sm:p-5 shadow-sm">
+      <div>
         <!-- 账号管理 -->
         <AccountSettingsTab
           v-if="activeTab === 'account'"
@@ -436,11 +460,12 @@ onMounted(async () => {
           @select="selectAccount"
           @toggle="toggleAccount"
           @settings="openAccountSettings"
+          @notification="openDrawer('notification', $event)"
           @set-default-plan="requestDefaultPlanConfirmation('set', $event)"
           @apply-default-plan="requestDefaultPlanConfirmation('apply', $event)"
           @edit="openEditModal"
           @delete="handleDelete"
-          @saved="handleSaved"
+          @saved="(id) => handleSaved(id)"
           @close-modal="showModal = false"
           @close-delete-confirm="showDeleteConfirm = false"
           @confirm-delete="confirmDelete"
@@ -545,6 +570,15 @@ onMounted(async () => {
             @refresh="runAutoCodeRefreshNow"
           />
 
+          <!-- 管理员全局发信邮箱 (SMTP) 配置卡片 -->
+          <AdminSmtpConfigCard
+            v-model:config="localOffline"
+            :saving="offlineSaving"
+            :testing="offlineTesting"
+            @save="handleSaveOffline"
+            @test="handleTestOffline"
+          />
+
           <AdminSystemPanel
             v-model:local-system-config="localSystemConfig"
             v-model:local-capture-config="localCaptureConfig"
@@ -574,16 +608,111 @@ onMounted(async () => {
       @cancel="closeDefaultPlanConfirmation"
     />
 
-    <ConfirmModal
-      :show="modalVisible"
-      :title="modalConfig.title"
-      :message="modalConfig.message"
-      :type="modalConfig.type"
-      :is-alert="modalConfig.isAlert"
-      confirm-text="知道了"
-      @confirm="modalVisible = false"
-      @close="modalVisible = false"
-      @cancel="modalVisible = false"
-    />
   </div>
+
+    <!-- 液态玻璃配置浮层 (含账号设置与通知设置，右上角有关闭按钮) -->
+    <Teleport to="body">
+      <!-- 保证 ConfirmModal 在同一个 Teleport 并且在最高层级渲染 -->
+      <ConfirmModal
+        :show="modalVisible"
+        :title="modalConfig.title"
+        :message="modalConfig.message"
+        :type="modalConfig.type"
+        :is-alert="modalConfig.isAlert"
+        confirm-text="知道了"
+        @confirm="modalVisible = false"
+        @close="modalVisible = false"
+        @cancel="modalVisible = false"
+      />
+      <div v-if="showDrawerModal" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 p-3 sm:p-5 backdrop-blur-sm" @click.self="closeDrawer">
+        <div class="max-h-[88vh] max-w-2xl w-full flex flex-col overflow-hidden rounded-2xl shadow-2xl border border-white/70 dark:border-white/10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl animate-scale-in">
+          <!-- 浮层头部 (单一标题 + 右上角关闭按钮) -->
+          <div class="flex items-center justify-between border-b border-gray-100/80 px-4 py-3 sm:px-5 dark:border-gray-800">
+            <div class="flex items-center gap-2.5">
+              <div
+                class="h-8 w-8 flex items-center justify-center rounded-xl text-base shadow-sm"
+                :class="drawerActiveTab === 'account-config' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400'"
+              >
+                <div :class="drawerActiveTab === 'account-config' ? 'i-carbon-settings' : 'i-carbon-notification'" />
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="text-sm sm:text-base font-bold text-gray-900 dark:text-gray-100">
+                    {{ drawerActiveTab === 'account-config' ? '账号功能配置' : '掉线通知配置' }}
+                  </h3>
+                  <!-- 微信账号专属：自动刷新code 灰色小字 + 胶囊开关 -->
+                  <div
+                    v-if="drawerActiveTab === 'account-config' && isCurrentAccountWx"
+                    class="inline-flex items-center gap-1.5 ml-1 sm:ml-2 px-2 py-0.5 rounded-full bg-gray-100/80 dark:bg-gray-800/80 border border-gray-200/50 dark:border-gray-700/50 shadow-inner"
+                    title="开启后按设定间隔自动获取新 Code 并重启账号，保障长期运行不掉线"
+                  >
+                    <span class="text-[11px] text-gray-400 font-medium select-none">自动刷新code</span>
+                    <input
+                      type="checkbox"
+                      :checked="localAutoCodeRefresh.enabled"
+                      :disabled="autoCodeRefreshSaving"
+                      class="relative h-4 w-7 rounded-full bg-gray-300 dark:bg-gray-600 appearance-none cursor-pointer transition-colors duration-200 ease-in-out focus:outline-none checked:bg-emerald-500 checked:hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:h-3 after:w-3 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:duration-200 checked:after:translate-x-3"
+                      @change="onAutoCodeRefreshToggle(($event.target as HTMLInputElement).checked)"
+                    />
+                  </div>
+                </div>
+                <p v-if="currentAccountName" class="text-[11px] text-gray-400">
+                  正在配置：{{ currentAccountName }}
+                </p>
+              </div>
+            </div>
+            <!-- 右上角关闭按钮 -->
+            <button
+              class="h-8 w-8 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              title="关闭"
+              @click="closeDrawer"
+            >
+              <div class="i-carbon-close text-xl" />
+            </button>
+          </div>
+
+          <!-- 浮层内容滚动区 -->
+          <div class="flex-1 overflow-y-auto p-4 sm:p-5">
+            <AccountFeatureSettings
+              v-if="drawerActiveTab === 'account-config'"
+              v-model:strategy="localStrategySettings"
+              v-model:automation="localAutomationSettings"
+              :current-account-name="currentAccountName"
+              :current-account-id="currentAccountId"
+              :loading="settingsLoading"
+              :saving="accountSettingsSaving"
+              :planting-strategy-options="plantingStrategyOptions"
+              :bag-fallback-strategy-options="bagFallbackStrategyOptions"
+              :strategy-preview-label="strategyPreviewLabel"
+              :fertilizer-land-type-options="fertilizerLandTypeOptions"
+              :fertilizer-options="fertilizerOptions"
+              @save="saveCurrentAccountSettings"
+            />
+
+            <div v-else-if="drawerActiveTab === 'notification'" class="space-y-4">
+              <UserEmailNotificationCard
+                v-model:config="localOffline"
+                :current-account-name="currentAccountName"
+                :saving="offlineSaving"
+                :testing="offlineTesting"
+                @save="handleSaveOffline"
+                @test="handleTestOffline"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
 </template>
+
+
+<style scoped>
+.liquid-card {
+  background: var(--liquid-glass-bg);
+  backdrop-filter: var(--liquid-glass-blur);
+  -webkit-backdrop-filter: var(--liquid-glass-blur);
+  border: 1px solid var(--liquid-glass-border);
+  box-shadow: var(--liquid-glass-shadow);
+}
+</style>

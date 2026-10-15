@@ -4,7 +4,7 @@ import api from '@/api'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
-import { CHARITY_FLOWER_ACTIVITY_WINDOW, isWithinActivityWindowMs, MILK_TEA_ACTIVITY_WINDOW, RAIN_POEM_ACTIVITY_WINDOW } from '@/constants/activity-windows'
+import { CHARITY_FLOWER_ACTIVITY_WINDOW, isWithinActivityWindowMs, RAIN_POEM_ACTIVITY_WINDOW } from '@/constants/activity-windows'
 
 interface AutomationSettings {
   automation: {
@@ -52,7 +52,6 @@ interface AutomationSettings {
     fertilizer_gift: boolean
     fertilizer_buy_organic: boolean
     fertilizer_buy_normal: boolean
-    mall_coupon_gift_buy: boolean
     mystery_shop_auto_buy: boolean
     mystery_shop_allow_gold: boolean
     mystery_shop_allow_coupon: boolean
@@ -184,10 +183,6 @@ watch(() => props.currentAccountId, loadQixiFriends)
         <BaseSwitch v-model="settings.automation.farm_push" label="推送触发巡田" />
         <BaseSwitch v-model="settings.automation.land_upgrade" label="自动升级土地" />
         <BaseSwitch v-model="settings.automation.fertilizer_gift" label="自动填充化肥" />
-        <section v-if="isWithinActivityWindowMs(MILK_TEA_ACTIVITY_WINDOW, nowMs)" class="space-y-3">
-          <h3 class="text-sm font-medium">奶茶热销中</h3>
-          <BaseSwitch v-model="settings.automation.mall_coupon_gift_buy" label="自动购买点券礼包（买完剩余限额）" />
-        </section>
         <BaseSwitch v-model="settings.automation.fertilizer_buy_organic" label="自动购买有机化肥" />
         <BaseSwitch v-model="settings.automation.fertilizer_buy_normal" label="自动购买无机化肥" />
         <div class="max-w-full w-fit inline-flex items-center gap-1.5">
@@ -295,7 +290,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
           <div v-if="SHOW_STAR_ACTIVITY" class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
             <BaseSwitch v-model="settings.automation.star_passport_claim" label="自动领取千星游记" />
           </div>
-          <div class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+          <div v-if="SHOW_STAR_ACTIVITY" class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
             <BaseSwitch v-model="settings.automation.star_solar_claim" label="自动领取节令小札" />
           </div>
           <div v-if="SHOW_STAR_ACTIVITY" class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
