@@ -21,6 +21,8 @@ const {
     getLandsDetail,
     getAvailableSeeds,
     runFarmOperation,
+    runManualFertilize,
+    runManualOrganicFertilize,
     runFertilizerByConfig,
     ORGANIC_FERTILIZER_ID,
     fertilize,
@@ -481,6 +483,23 @@ async function runPetDiaryAutomation(flags) {
     }
 }
 
+const milkTeaAutoCheckLogState = { lastError: '', lastLoggedAt: 0 };
+const MILK_TEA_AUTO_CHECK_LOG_INTERVAL_MS = 10 * 60 * 1000;
+const MILK_TEA_UNAVAILABLE_RETRY_INTERVAL_MS = 2 * 60 * 60 * 1000;
+let milkTeaUnavailableUntil = 0;
+
+function logMilkTeaAutoCheckFailure(error, accountId) {
+    const message = String(error && error.message || error || '未知错误');
+    const now = Date.now();
+    if (milkTeaAutoCheckLogState.lastError === message &&
+        now - milkTeaAutoCheckLogState.lastLoggedAt < MILK_TEA_AUTO_CHECK_LOG_INTERVAL_MS) return;
+    log('活动', `奶茶热销中自动检查失败：${message}`, {
+        module: 'activity', event: '奶茶热销中自动检查', result: 'error', accountId
+    });
+    milkTeaAutoCheckLogState.lastError = message;
+    milkTeaAutoCheckLogState.lastLoggedAt = now;
+}
+
 async function runStarActivityAutoClaims() {
     if (!loginReady || friendSyncPaused || starActivityClaimRunning) return;
 
@@ -894,15 +913,37 @@ async function runStarActivityAutoClaims() {
             } // end if (rainPoem?.active !== false)
         }
 
-        if (milkTeaEnabled) {
+        if (milkTeaEnabled && Date.now() >= milkTeaUnavailableUntil) {
             const { AUTO_ACTIONS, phase } = require('../services/activity-milk-tea');
             const service = require('../services/activity');
+            const accountId = String(process.env.FARM_ACCOUNT_ID || '');
+            let state = null;
+            try {
+                state = await service.getMilkTea();
+                if (milkTeaUnavailableUntil || milkTeaAutoCheckLogState.lastError) {
+                    log('活动', '奶茶热销中自动检查已恢复', {
+                        module: 'activity', event: '奶茶热销中自动检查', result: 'recovered', accountId
+                    });
+                    milkTeaUnavailableUntil = 0;
+                    milkTeaAutoCheckLogState.lastError = '';
+                    milkTeaAutoCheckLogState.lastLoggedAt = 0;
+                }
+            } catch (error) {
+                if (error.code === 'MILK_TEA_NOT_PARTICIPATING') {
+                    milkTeaUnavailableUntil = Date.now() + MILK_TEA_UNAVAILABLE_RETRY_INTERVAL_MS;
+                    log('活动', '奶茶热销中自动操作已跳过：当前账号未参与活动，将稍后重试', {
+                        module: 'activity', event: '奶茶热销中自动检查', result: 'skip', accountId
+                    });
+                } else {
+                    logMilkTeaAutoCheckFailure(error, accountId);
+                }
+            }
             for (const [key, action] of Object.entries(AUTO_ACTIONS)) {
+                if (!state) break;
                 if (!loginReady || friendSyncPaused || getAutomation()?.[key] !== true) continue;
                 const currentPhase = phase(require('../utils/utils').getServerTimeSec());
                 if (!['business', 'settling'].includes(currentPhase)) break;
                 try {
-                    const state = await service.getMilkTea();
                     if (!Number(state.summary.shop_open_at) && !['shareDaily', 'shareRewards', 'fundRewards'].includes(action)) continue;
                     let params = {};
                     if (action === 'buy') {
@@ -928,10 +969,11 @@ async function runStarActivityAutoClaims() {
                     if (action === 'shareDaily' && state.share?.daily?.daily_reward_claimed) continue;
                     if (action === 'shareRewards' && !state.share?.milestones?.some(x => Number(x.state) === 2)) continue;
                     if (action === 'fundRewards' && (!state.fund?.unlocked || !state.fund.tiers.some(x => Number(x.state) === 2))) continue;
-                    await service.operateMilkTea(action, params);
+                    const result = await service.operateMilkTea(action, params);
+                    if (result?.activity) state = result.activity;
                 } catch (error) {
                     // Mutation failures are logged by the shared service; retain query failures here.
-                    if (!error.milkTeaLogged) log('活动', `奶茶热销中自动检查失败：${error.message}`, { module: 'activity', event: '奶茶热销中自动检查', result: 'error' });
+                    if (!error.milkTeaLogged) logMilkTeaAutoCheckFailure(error, accountId);
                 }
             }
         }
@@ -1841,6 +1883,12 @@ async function handleApiCall(msg) {
             }
             case 'doFarmOp':
                 result = await runFarmOperation(args[0]);
+                break;
+            case 'fertilizeAll':
+                result = await runManualFertilize();
+                break;
+            case 'fertilizeOrganicAll':
+                result = await runManualOrganicFertilize();
                 break;
             case 'buyFertilizer': {
                 const fertType = args[0] || 'organic';

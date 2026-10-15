@@ -72,7 +72,6 @@ function registerAdminIllustratedPurchaseRoutes({
     } catch (err) {
       adminLogger.error("图鉴购买种子失败", {
         error: err.message,
-        stack: err.stack,
       });
       sendProviderError(res, err);
     }
@@ -149,7 +148,6 @@ function registerAdminIllustratedPurchaseRoutes({
     } catch (err) {
       adminLogger.error("图鉴一键购买失败", {
         error: err.message,
-        stack: err.stack,
       });
       sendProviderError(res, err);
     }

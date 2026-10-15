@@ -51,15 +51,17 @@ const router = createRouter({
         component: route.component,
       })),
     },
-    { path: '/admin', redirect: '/settings?tab=system' },
+    { path: '/admin', redirect: '/system-settings' },
     { path: '/login', redirect: '/' },
     { path: '/renewal', redirect: '/' },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
 
-router.beforeEach(async () => {
+router.beforeEach(async (to) => {
   NProgress.start()
+  if (to.name === 'Settings' && ['system', 'capture'].includes(String(to.query.tab || '')))
+    return { name: 'SystemSettings' }
   await ensureAdminSession()
   return true
 })

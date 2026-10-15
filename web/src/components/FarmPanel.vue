@@ -46,7 +46,15 @@ async function executeOperate() {
   operating.value = true
   try {
     if (config.opType) {
-      await farmStore.operate(currentAccountId.value, config.opType)
+      if (config.opType === 'fertilize') {
+        await farmStore.fertilizeAll(currentAccountId.value)
+      }
+      else if (config.opType === 'fertilizeOrganic') {
+        await farmStore.fertilizeOrganicAll(currentAccountId.value)
+      }
+      else {
+        await farmStore.operate(currentAccountId.value, config.opType)
+      }
     }
     else if (config.bulkAction === 'removeAll') {
       await farmStore.removeAllPlants(currentAccountId.value)
@@ -68,9 +76,10 @@ function handleOperate(opType: string) {
     return
 
   const confirmMap: Record<string, string> = {
-    harvest: '确定要收获所有成熟作物吗？',
     clear: '确定要执行一键务农吗？将自动浇水、除草、除虫。',
-    plant: '确定要一键种植吗？(根据策略配置)',
+    fertilize: '确定要一键施肥吗？将按已保存的施肥策略和土地范围使用现有肥料，不会自动购买肥料。',
+    fertilizeOrganic: '确定要对符合条件的土地循环使用现有有机肥吗？不会自动购买肥料。',
+    plant: '确定按当前种植方案种植所有可用土地吗？',
     upgrade: '确定要升级所有可升级的土地吗？(消耗金币)',
     all: '确定要执行一键全收吗？将依次执行收获、务农、种植与升级。',
   }
@@ -140,10 +149,11 @@ function handleLandRemove(land: any) {
 }
 
 const operations = [
-  { type: 'harvest', label: '收获', icon: 'i-carbon-wheat', color: 'bg-blue-600 hover:bg-blue-700' },
-  { type: 'clear', label: '一键务农', icon: 'i-carbon-clean', color: 'bg-teal-600 hover:bg-teal-700' },
-  { type: 'plant', label: '种植', icon: 'i-carbon-sprout', color: 'bg-green-600 hover:bg-green-700' },
   { type: 'upgrade', label: '升级土地', icon: 'i-carbon-upgrade', color: 'bg-purple-600 hover:bg-purple-700' },
+  { type: 'clear', label: '一键务农', icon: 'i-carbon-clean', color: 'bg-teal-600 hover:bg-teal-700' },
+  { type: 'fertilize', label: '一键施肥', icon: 'i-carbon-growth', color: 'bg-lime-600 hover:bg-lime-700' },
+  { type: 'fertilizeOrganic', label: '一键有机', icon: 'i-carbon-leaf', color: 'bg-emerald-600 hover:bg-emerald-700' },
+  { type: 'plant', label: '一键种植', icon: 'i-carbon-sprout', color: 'bg-green-600 hover:bg-green-700' },
   { type: 'all', label: '一键全收', icon: 'i-carbon-flash', color: 'bg-orange-600 hover:bg-orange-700' },
 ]
 
@@ -245,7 +255,7 @@ onUnmounted(() => {
           <div class="i-carbon-grid text-xl" />
           土地详情
         </h3>
-        <div class="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+        <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <button
             v-for="op in operations"
             :key="op.type"

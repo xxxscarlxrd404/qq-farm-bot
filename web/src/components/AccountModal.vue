@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { useEventListener, useIntervalFn } from '@vueuse/core'
-import { computed, reactive, ref, watch, useId } from 'vue'
-import { useModalFocus } from '@/composables/useModalFocus'
+import { computed, reactive, ref, useId, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
+import { useModalFocus } from '@/composables/useModalFocus'
 import { useWxLoginStore } from '@/stores/wx-login'
 import { parseManualLoginInput } from '@/utils/gateway-url'
 
@@ -64,7 +64,7 @@ const captureCompleting = ref(false)
 const captureError = ref('')
 const captureCopiedField = ref<'host' | 'port' | ''>('')
 const captureAccountName = ref('')
-const capturePlatform = ref<'qq' | 'wx'>('qq')
+const capturePlatform = ref<'qq' | 'wx'>('wx')
 const showCaptureHelp = ref(false)
 const captureHelpMode = ref<'first' | 'daily'>('first')
 const captureHelpDevice = ref<'ios' | 'android'>('ios')
@@ -73,7 +73,7 @@ const captureFlow = ref<CaptureFlowState | null>(null)
 const form = reactive({
   name: '',
   code: '',
-  platform: 'qq' as 'qq' | 'wx',
+  platform: 'wx' as 'qq' | 'wx',
 })
 
 const captureHelpSteps = computed(() => captureHelpMode.value === 'first'
@@ -446,7 +446,7 @@ async function submitManual() {
     const onlyNameChanged = !parsedInput.gatewayUrl
       && form.name !== props.editData.name
       && form.code === (props.editData.code || '')
-      && form.platform === (props.editData.platform || 'qq')
+      && form.platform === (props.editData.platform || 'wx')
 
     if (onlyNameChanged) {
       payload = { id: props.editData.id, name: form.name }
@@ -501,7 +501,7 @@ watch(() => props.show, (newVal) => {
     captureError.value = ''
     captureCopiedField.value = ''
     captureAccountName.value = props.editData?.name || ''
-    capturePlatform.value = props.editData?.platform === 'wx' ? 'wx' : 'qq'
+    capturePlatform.value = props.editData?.platform === 'qq' ? 'qq' : 'wx'
     captureHelpMode.value = localStorage.getItem(CAPTURE_SUCCESS_STORAGE_KEY) === '1' ? 'daily' : 'first'
     void loadCaptureConfig()
     void loadQqCapability()
@@ -509,7 +509,7 @@ watch(() => props.show, (newVal) => {
       activeTab.value = 'manual'
       form.name = props.editData.name || ''
       form.code = props.editData.code || ''
-      form.platform = props.editData.platform || 'qq'
+      form.platform = props.editData.platform || 'wx'
       wxAccountName.value = props.editData.name || ''
       qqAccountName.value = props.editData.name || ''
     }
@@ -517,7 +517,7 @@ watch(() => props.show, (newVal) => {
       activeTab.value = 'manual'
       form.name = ''
       form.code = ''
-      form.platform = 'qq'
+      form.platform = 'wx'
       wxAccountName.value = ''
       qqAccountName.value = ''
     }
@@ -546,7 +546,13 @@ watch(activeTab, (tab) => {
     void cancelCaptureSession()
 })
 const helpSurface = ref<HTMLElement | null>(null)
-useModalFocus(() => showCaptureHelp.value, helpSurface, () => { showCaptureHelp.value = false })
+useModalFocus(
+  () => showCaptureHelp.value,
+  helpSurface,
+  () => {
+    showCaptureHelp.value = false
+  },
+)
 const modalSurface = ref<HTMLElement | null>(null)
 const modalId = useId()
 useModalFocus(() => props.show, modalSurface, close)

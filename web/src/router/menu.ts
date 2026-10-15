@@ -68,8 +68,15 @@ export const menuRoutes: MenuItem[] = [
   {
     path: 'settings',
     name: 'Settings',
-    label: '设置',
+    label: '账号设置',
     icon: 'i-carbon-settings',
+    component: () => import('@/views/Settings.vue'),
+  },
+  {
+    path: 'system-settings',
+    name: 'SystemSettings',
+    label: '系统设置',
+    icon: 'i-carbon-settings-services',
     component: () => import('@/views/Settings.vue'),
   },
 ]

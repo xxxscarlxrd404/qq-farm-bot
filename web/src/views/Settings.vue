@@ -20,16 +20,23 @@ import { useSettingStore } from '@/stores/setting'
 const settingStore = useSettingStore()
 const route = useRoute()
 
-type SettingsTabKey = 'account' | 'account-config' | 'notification' | 'system'
+type SettingsTabKey = 'account' | 'account-config' | 'notification'
 
-const SETTINGS_TAB_KEYS: SettingsTabKey[] = ['account', 'account-config', 'notification', 'system']
+const SETTINGS_TAB_KEYS: SettingsTabKey[] = ['account', 'account-config', 'notification']
 const LEGACY_SETTINGS_TABS: Record<string, SettingsTabKey> = {
   'strategy': 'account-config',
   'automation': 'account-config',
   'default-plan': 'account-config',
+  'daily': 'account-config',
+  'daily-activity': 'account-config',
   'user': 'notification',
-  'capture': 'system',
 }
+
+const tabs = [
+  { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
+  { key: 'account-config', label: '常规设置', icon: 'i-carbon-settings-adjust' },
+  { key: 'notification', label: '通知设置', icon: 'i-carbon-notification' },
+] as const
 
 function getInitialSettingsTab(): SettingsTabKey {
   const requested = String(route.query.tab || '')
@@ -47,6 +54,12 @@ function getInitialSettingsTab(): SettingsTabKey {
 
 const activeTab = ref<SettingsTabKey>(getInitialSettingsTab())
 const settingsTabsNav = ref<HTMLElement | null>(null)
+const isSystemSettingsPage = computed(() => route.name === 'SystemSettings')
+const pageTitle = computed(() => isSystemSettingsPage.value ? '系统设置' : '账号设置')
+const localAutoCodeRefresh = ref({ enabled: true, intervalMinutes: 2, maxRetries: 8 })
+watch(() => route.name, () => {
+  activeTab.value = getInitialSettingsTab()
+})
 
 async function scrollActiveTabIntoView() {
   await nextTick()
@@ -59,16 +72,11 @@ watch(activeTab, (newTab) => {
   void scrollActiveTabIntoView()
 })
 
-const tabs = [
-  { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
-  { key: 'account-config', label: '账号设置', icon: 'i-carbon-settings-adjust' },
-  { key: 'notification', label: '通知设置', icon: 'i-carbon-notification' },
-  { key: 'system', label: '系统配置', icon: 'i-carbon-settings-services' },
-] as const
-
 const modalVisible = ref(false)
 const defaultPlanSettingId = ref('')
 const defaultPlanApplyingId = ref('')
+const applyingNotificationSettings = ref(false)
+const notificationApplyConfirmationVisible = ref(false)
 const defaultPlanConfirmation = ref<{
   action: 'set' | 'apply'
   account: any
@@ -151,10 +159,7 @@ const {
   deleteLoading,
   editingAccount,
   accountToDelete,
-  showClearStoppedConfirm,
-  clearStoppedLoading,
   refreshWxCodesLoading,
-  stoppedAccountsCount,
   isAddAccountDisabled,
   addAccountDisabledReason,
   isAccountOpsDisabled,
@@ -168,13 +173,22 @@ const {
   refreshWxCodesNow,
   handleSaved,
   selectAccount,
-  openClearStoppedConfirm,
-  confirmClearStopped,
 } = useAccountSettings(showAlert)
+
+const notificationApplyTargets = computed(() =>
+  accounts.value.filter(account => String(account.id) !== String(currentAccountId.value)),
+)
+const notificationApplyConfirmationMessage = computed(() => {
+  const count = notificationApplyTargets.value.length
+  const deleteSeconds = Number(localOffline.value.offlineDeleteSec) || 0
+  const deleteWarning = deleteSeconds > 0
+    ? ` 当前配置还会在账号离线 ${deleteSeconds} 秒后删除账号。`
+    : ''
+  return `确定将当前账号的下线提醒设置复制到全部 ${count} 个其他账号吗？这会覆盖它们已有的通知渠道、各渠道凭据和消息内容。${deleteWarning}`
+})
 
 const {
   localAutomationSettings,
-  localAutoCodeRefresh,
   autoCodeRefreshing,
   fertilizerLandTypeOptions,
   fertilizerOptions,
@@ -202,14 +216,13 @@ const {
 const accountSettingsSaving = ref(false)
 const autoCodeRefreshSaving = ref(false)
 const systemSettingsSaving = ref(false)
-const anySystemSaving = computed(() => systemSettingsSaving.value || systemConfigSaving.value || captureConfigSaving.value || deviceProtocolSaving.value)
+const anySystemSaving = computed(() => systemSettingsSaving.value || systemConfigSaving.value || captureConfigSaving.value || deviceProtocolSaving.value || autoCodeRefreshSaving.value)
 
 function buildCurrentAccountConfig() {
   return {
     ...settingStore.settings,
     ...localStrategySettings.value,
     ...localAutomationSettings.value,
-    autoCodeRefresh: localAutoCodeRefresh.value,
   }
 }
 
@@ -233,11 +246,13 @@ async function saveCurrentAccountSettings(_module?: string, quiet = false) {
 }
 
 async function saveAutoCodeRefreshSettings() {
-  if (!currentAccountId.value || autoCodeRefreshSaving.value)
+  if (autoCodeRefreshSaving.value)
     return
   autoCodeRefreshSaving.value = true
   try {
-    const result = await settingStore.saveAutoCodeRefresh(String(currentAccountId.value), localAutoCodeRefresh.value)
+    localAutoCodeRefresh.value.intervalMinutes = Math.max(1, Math.min(1440, Math.round(Number(localAutoCodeRefresh.value.intervalMinutes) || 2)))
+    localAutoCodeRefresh.value.maxRetries = Math.max(1, Math.min(100, Math.round(Number(localAutoCodeRefresh.value.maxRetries) || 8)))
+    const result = await settingStore.saveAutoCodeRefresh(localAutoCodeRefresh.value)
     if (!result.ok)
       throw new Error(result.error || '保存失败')
     showAlert('微信定时刷新重登设置已保存')
@@ -250,9 +265,53 @@ async function saveAutoCodeRefreshSettings() {
   }
 }
 
-function openAccountSettings(account: any) {
-  selectAccount(account)
-  activeTab.value = 'account-config'
+async function applyNotificationSettingsToOtherAccounts() {
+  if (applyingNotificationSettings.value || !currentAccountId.value || notificationApplyTargets.value.length === 0)
+    return
+
+  const targets = [...notificationApplyTargets.value]
+  applyingNotificationSettings.value = true
+  const config = {
+    ...JSON.parse(JSON.stringify(localOffline.value)),
+    confirmed: true,
+  }
+  const failures: string[] = []
+  try {
+    for (const account of targets) {
+      try {
+        const { data } = await api.post('/api/settings/offline-reminder', config, {
+          headers: { 'x-account-id': String(account.id) },
+        })
+        if (!data?.ok)
+          failures.push(`${account.name || account.id}: ${data?.error || '保存失败'}`)
+      }
+      catch (error: any) {
+        failures.push(`${account.name || account.id}: ${error.response?.data?.error || error.message || '保存失败'}`)
+      }
+    }
+
+    if (failures.length > 0) {
+      const appliedCount = targets.length - failures.length
+      showAlert(
+        `通知设置已应用到 ${appliedCount} 个账号，${failures.length} 个账号失败：${failures.join('；')}`,
+        'danger',
+      )
+      return
+    }
+    showAlert(`已将当前账号的通知设置应用到 ${targets.length} 个其他账号`)
+  }
+  finally {
+    applyingNotificationSettings.value = false
+  }
+}
+
+async function loadAutoCodeRefreshSettings() {
+  const result = await settingStore.fetchAutoCodeRefresh()
+  if (!result.ok) {
+    showAlert(`读取刷新设置失败: ${result.error || '未知错误'}`, 'danger')
+    return
+  }
+  localAutoCodeRefresh.value = { ...settingStore.autoCodeRefresh }
 }
 
 async function saveSystemSettings() {
@@ -341,6 +400,15 @@ function requestDefaultPlanConfirmation(action: 'set' | 'apply', account: any) {
   defaultPlanConfirmation.value = { action, account }
 }
 
+function requestCurrentAccountDefaultPlanConfirmation(action: 'set' | 'apply') {
+  const account = accounts.value.find(item => String(item.id) === String(currentAccountId.value))
+  if (!account) {
+    showAlert('请先选择账号', 'danger')
+    return
+  }
+  requestDefaultPlanConfirmation(action, account)
+}
+
 function closeDefaultPlanConfirmation() {
   defaultPlanConfirmation.value = null
 }
@@ -367,7 +435,7 @@ watch(currentAccountId, async () => {
 })
 
 onMounted(async () => {
-  await Promise.all([loadSystemConfig(), loadCaptureConfig()])
+  await Promise.all([loadSystemConfig(), loadCaptureConfig(), loadAutoCodeRefreshSettings()])
   await fetchAccounts()
   await fetchDeviceProtocol()
   selectFirstAccountIfNeeded()
@@ -384,12 +452,12 @@ onMounted(async () => {
   <div class="settings-page">
     <div class="mb-4">
       <h1 class="text-2xl text-gray-900 font-bold dark:text-gray-100">
-        设置
+        {{ pageTitle }}
       </h1>
     </div>
 
     <div class="border border-gray-200 rounded-lg bg-white shadow dark:border-gray-700 dark:bg-gray-800">
-      <div class="border-b border-gray-200 dark:border-gray-700">
+      <div v-if="!isSystemSettingsPage" class="border-b border-gray-200 dark:border-gray-700">
         <nav ref="settingsTabsNav" class="flex gap-1 overflow-x-auto p-2">
           <button
             v-for="tab in tabs"
@@ -411,12 +479,11 @@ onMounted(async () => {
       <div class="p-4">
         <!-- 账号管理 -->
         <AccountSettingsTab
-          v-if="activeTab === 'account'"
+          v-if="!isSystemSettingsPage && activeTab === 'account'"
           :accounts="accounts"
           :accounts-loading="accountsLoading"
           :current-account-id="currentAccountId"
           :user-is-admin="userIsAdmin"
-          :stopped-accounts-count="stoppedAccountsCount"
           :is-add-account-disabled="isAddAccountDisabled"
           :add-account-disabled-reason="addAccountDisabledReason"
           :is-account-ops-disabled="isAccountOpsDisabled"
@@ -425,58 +492,72 @@ onMounted(async () => {
           :show-delete-confirm="showDeleteConfirm"
           :delete-loading="deleteLoading"
           :account-to-delete="accountToDelete"
-          :show-clear-stopped-confirm="showClearStoppedConfirm"
-          :clear-stopped-loading="clearStoppedLoading"
           :refresh-wx-codes-loading="refreshWxCodesLoading"
-          :default-plan-setting-id="defaultPlanSettingId"
-          :default-plan-applying-id="defaultPlanApplyingId"
           @add="openAddModal"
-          @clear-stopped="openClearStoppedConfirm"
           @refresh-wx-codes="refreshWxCodesNow"
           @select="selectAccount"
           @toggle="toggleAccount"
-          @settings="openAccountSettings"
-          @set-default-plan="requestDefaultPlanConfirmation('set', $event)"
-          @apply-default-plan="requestDefaultPlanConfirmation('apply', $event)"
           @edit="openEditModal"
           @delete="handleDelete"
           @saved="handleSaved"
           @close-modal="showModal = false"
           @close-delete-confirm="showDeleteConfirm = false"
           @confirm-delete="confirmDelete"
-          @close-clear-stopped-confirm="showClearStoppedConfirm = false"
-          @confirm-clear-stopped="confirmClearStopped"
         />
 
-        <AccountFeatureSettings
-          v-else-if="activeTab === 'account-config'"
-          v-model:strategy="localStrategySettings"
-          v-model:automation="localAutomationSettings"
-          :current-account-name="currentAccountName"
-          :current-account-id="currentAccountId"
-          :loading="settingsLoading"
-          :saving="accountSettingsSaving"
-          :planting-strategy-options="plantingStrategyOptions"
-          :bag-fallback-strategy-options="bagFallbackStrategyOptions"
-          :strategy-preview-label="strategyPreviewLabel"
-          :fertilizer-land-type-options="fertilizerLandTypeOptions"
-          :fertilizer-options="fertilizerOptions"
-          @save="saveCurrentAccountSettings"
-        />
-
-        <div v-else-if="activeTab === 'notification'" class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
-                通知设置
-              </h3>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                配置账号离线后的通知渠道和消息内容。
-              </p>
-            </div>
-            <BaseButton size="sm" :loading="offlineSaving" :disabled="offlineTesting" @click="handleSaveOffline">
-              保存通知设置
+        <div v-else-if="!isSystemSettingsPage && activeTab === 'account-config'" class="space-y-4">
+          <div class="flex flex-wrap justify-end gap-2">
+            <BaseButton
+              variant="secondary"
+              size="sm"
+              :loading="defaultPlanSettingId === String(currentAccountId)"
+              :disabled="!currentAccountId || !!defaultPlanSettingId || !!defaultPlanApplyingId"
+              @click="requestCurrentAccountDefaultPlanConfirmation('set')"
+            >
+              设置默认方案
             </BaseButton>
+            <BaseButton
+              variant="secondary"
+              size="sm"
+              :loading="defaultPlanApplyingId === String(currentAccountId)"
+              :disabled="!currentAccountId || !!defaultPlanSettingId || !!defaultPlanApplyingId"
+              @click="requestCurrentAccountDefaultPlanConfirmation('apply')"
+            >
+              应用默认方案
+            </BaseButton>
+          </div>
+          <AccountFeatureSettings
+            v-model:strategy="localStrategySettings"
+            v-model:automation="localAutomationSettings"
+            :current-account-name="currentAccountName"
+            :current-account-id="currentAccountId"
+            :loading="settingsLoading"
+            :saving="accountSettingsSaving"
+            :planting-strategy-options="plantingStrategyOptions"
+            :bag-fallback-strategy-options="bagFallbackStrategyOptions"
+            :strategy-preview-label="strategyPreviewLabel"
+            :fertilizer-land-type-options="fertilizerLandTypeOptions"
+            :fertilizer-options="fertilizerOptions"
+            @save="saveCurrentAccountSettings"
+          />
+        </div>
+
+        <div v-else-if="!isSystemSettingsPage && activeTab === 'notification'" class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap gap-2">
+              <BaseButton
+                size="sm"
+                variant="secondary"
+                :loading="applyingNotificationSettings"
+                :disabled="offlineSaving || offlineTesting || !currentAccountId || notificationApplyTargets.length === 0"
+                @click="notificationApplyConfirmationVisible = true"
+              >
+                一键应用当前账号设置
+              </BaseButton>
+              <BaseButton size="sm" :loading="offlineSaving" :disabled="offlineTesting || applyingNotificationSettings || !currentAccountId" @click="handleSaveOffline">
+                保存通知设置
+              </BaseButton>
+            </div>
           </div>
           <OfflineReminderCard
             v-model:config="localOffline"
@@ -484,22 +565,15 @@ onMounted(async () => {
             :current-channel-doc-url="currentChannelDocUrl"
             :saving="offlineSaving"
             :testing="offlineTesting"
+            :disabled="!currentAccountId"
             :show-save="false"
             @open-docs="openChannelDocs"
             @test="handleTestOffline"
           />
         </div>
 
-        <div v-else-if="activeTab === 'system'" class="space-y-5">
+        <div v-else-if="isSystemSettingsPage" class="space-y-5">
           <div class="sticky top-0 z-10 flex items-center justify-between border border-gray-200 rounded-xl bg-white/95 p-4 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/95">
-            <div>
-              <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
-                系统配置
-              </h3>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                统一管理连接参数、设备协议和抓包服务。
-              </p>
-            </div>
             <BaseButton size="sm" :loading="anySystemSaving" @click="saveSystemSettings">
               保存系统配置
             </BaseButton>
@@ -536,9 +610,8 @@ onMounted(async () => {
 
           <AutoCodeRefreshCard
             v-model:config="localAutoCodeRefresh"
-            :current-account-name="currentAccountName"
             :current-account-id="currentAccountId"
-            :loading="settingsLoading"
+            :loading="settingStore.autoCodeRefreshLoading"
             :saving="autoCodeRefreshSaving"
             :refreshing="autoCodeRefreshing"
             @save="saveAutoCodeRefreshSettings"
@@ -572,6 +645,17 @@ onMounted(async () => {
       @confirm="confirmDefaultPlanOperation"
       @close="closeDefaultPlanConfirmation"
       @cancel="closeDefaultPlanConfirmation"
+    />
+
+    <ConfirmModal
+      :show="notificationApplyConfirmationVisible"
+      title="应用通知设置到其他账号"
+      :message="notificationApplyConfirmationMessage"
+      type="danger"
+      confirm-text="确认应用"
+      @confirm="notificationApplyConfirmationVisible = false; void applyNotificationSettingsToOtherAccounts()"
+      @close="notificationApplyConfirmationVisible = false"
+      @cancel="notificationApplyConfirmationVisible = false"
     />
 
     <ConfirmModal

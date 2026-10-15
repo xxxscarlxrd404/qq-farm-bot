@@ -34,3 +34,35 @@ test('WeChat accounts still report a missing wxid during Code refresh scheduling
   assert.equal(logs.length, 1);
   assert.equal(logs[0][1], '自动刷新 Code 未启动: 账号缺少 wxid');
 });
+
+test('all WeChat accounts use the same global refresh interval', () => {
+  const logs = [];
+  const accountIds = [];
+  const accounts = [
+    { id: 'wx-1', name: 'WeChat one', platform: 'wx', wxid: 'wxid-1' },
+    { id: 'wx-2', name: 'WeChat two', platform: 'wx', wxid: 'wxid-2' },
+  ];
+  const service = createAutoCodeRefreshService({
+    store: {
+      getAutoCodeRefresh: (...args) => {
+        accountIds.push(args);
+        return { enabled: true, intervalMinutes: 2, maxRetries: 100 };
+      },
+    },
+    getAccounts: () => ({ accounts }),
+    addOrUpdateAccount: () => {},
+    resolveWorkerControls: () => ({}),
+    log: (...args) => logs.push(args),
+    addAccountLog: () => {},
+  });
+
+  service.scheduleAccount('wx-1');
+  service.scheduleAccount('wx-2');
+  service.stopAccount('wx-1');
+  service.stopAccount('wx-2');
+
+  assert.deepEqual(accountIds, [[], []]);
+  assert.equal(logs.length, 2);
+  assert.match(logs[0][1], /间隔 2 分钟/);
+  assert.match(logs[1][1], /间隔 2 分钟/);
+});

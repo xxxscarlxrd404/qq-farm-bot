@@ -1,18 +1,13 @@
 <script setup lang="ts">
-import type { ActivityLabels, ActivitySection, ActivitySectionKey } from '@/components/activity/types'
+import type { ActivityLabels } from '@/components/activity/types'
 import { storeToRefs } from 'pinia'
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import api from '@/api'
 import CharityFlowerActivityPanel from '@/components/activity/CharityFlowerActivityPanel.vue'
-import HeluExchangePanel from '@/components/activity/HeluExchangePanel.vue'
-import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
-import SolarTermsActivityPanel from '@/components/activity/SolarTermsActivityPanel.vue'
-import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
-import QixiActivityPanel from '@/components/activity/QixiActivityPanel.vue'
 import RainPoemActivityPanel from '@/components/activity/RainPoemActivityPanel.vue'
-import StarRecordPanel from '@/components/activity/StarRecordPanel.vue'
-import BaseButton from '@/components/ui/BaseButton.vue'
+import SolarTermsActivityPanel from '@/components/activity/SolarTermsActivityPanel.vue'
 import WishShareActivityPanel from '@/components/activity/WishShareActivityPanel.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import { CHARITY_FLOWER_ACTIVITY_WINDOW, isWithinActivityWindowMs, PET_DIARY_ACTIVITY_WINDOW, RAIN_POEM_ACTIVITY_WINDOW, SHARE_REWARD_ACTIVITY_WINDOW, WISH_SIGN_ACTIVITY_WINDOW } from '@/constants/activity-windows'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
@@ -79,21 +74,8 @@ const accountStore = useAccountStore()
 const activityStore = useActivityStore()
 const toast = useToastStore()
 const userStore = useUserStore()
-const { currentAccountId, currentAccount } = storeToRefs(accountStore)
+const { currentAccountId } = storeToRefs(accountStore)
 const {
-  heluActivity: activity,
-  heluLoading,
-  passportClaimLoading,
-  solarClaimLoading,
-  starRecordClaimLoading,
-  exchangeLoading,
-  heluError,
-  qixiActivity,
-  qixiFriends,
-  qixiLoading,
-  qixiBuildLoading,
-  qixiGiftLoading,
-  qixiDewLoading,
   rainPoemActivity,
   rainPoemLoading,
   charityFlowerActivity,
@@ -104,8 +86,6 @@ const {
   shareRewardLoading,
 } = storeToRefs(activityStore)
 
-const SHOW_QIXI_ACTIVITY = false
-const SHOW_STAR_ACTIVITY = false
 const nowMs = ref(Date.now())
 let nowTimer: ReturnType<typeof window.setInterval> | null = null
 const rainPoemActivityActive = computed(() => isWithinActivityWindowMs(RAIN_POEM_ACTIVITY_WINDOW, nowMs.value))
@@ -115,7 +95,6 @@ const shareRewardActivityActive = computed(() => isWithinActivityWindowMs(SHARE_
 const petDiaryActivityActive = computed(() => isWithinActivityWindowMs(PET_DIARY_ACTIVITY_WINDOW, nowMs.value))
 const selectedActivity = ref<string | null>(null)
 const activityStatusFilter = ref<'active' | 'upcoming' | 'ended'>('active')
-const activeSection = ref<ActivitySectionKey>('journey')
 const activityDirectoryWindows = ref<Array<{ id: number, title: string, startTime: number, endTime: number, imageUrl?: string }>>([])
 interface ActivityDirectoryNode {
   id: number
@@ -164,13 +143,6 @@ const activityDirectoryGroups = ref<ActivityDirectoryNode[]>([])
 const unknownActivityIds = ref(new Set<number>())
 const activityScanLoading = ref(false)
 const ACTIVITY_REFRESH_INTERVAL_MS = 30_000
-const sections = computed<ActivitySection[]>(() => [
-  ...(SHOW_QIXI_ACTIVITY ? [{ key: 'qixi' as const, label: '鹊桥寄情', icon: 'i-carbon-favorite', count: qixiActivity.value?.gift.remainingCount || 0 }] : []),
-  { key: 'journey', label: '千星游记', icon: 'i-carbon-map', count: activity.value?.passport?.claimableLevels || 0 },
-  { key: 'records', label: '观星礼录', icon: 'i-carbon-star', count: activity.value?.starRecord?.claimableCount || 0 },
-  { key: 'shop', label: '星砂兑换商店', icon: 'i-carbon-store', count: activity.value?.exchangeShop?.length || 0 },
-  { key: 'notes', label: '节令小札', icon: 'i-carbon-notebook', count: activity.value?.solarTerms?.claimableCount || 0 },
-])
 
 function activityWindowStatus(window: { startMs: number, endMs: number }): 'upcoming' | 'active' | 'ended' {
   if (nowMs.value < window.startMs)
@@ -207,7 +179,8 @@ const activityCards = computed(() => {
         endTime: RAIN_POEM_ACTIVITY_WINDOW.endMs / 1000,
         activityIds: [2026070300],
       }]
-  if (!source.some(group => group.activityIds.includes(2026110100))) source.push({ id: 2026110100, title: '奶茶热销中', startTime: 1792029600, endTime: 1794844799, activityIds: [2026110100] })
+  if (!source.some(group => group.activityIds.includes(2026110100)))
+    source.push({ id: 2026110100, title: '奶茶热销中', startTime: 1792029600, endTime: 1794844799, activityIds: [2026110100] })
   const cards = source.map((group) => {
     const adaptedKey = group.id === 2026090100
       ? 'pet-diary' as const
@@ -231,7 +204,9 @@ const activityCards = computed(() => {
         'milk-tea': 'i-carbon-cafe',
         'pet-diary': 'i-fa-solid-paw',
         'charity-flower': 'i-carbon-favorite',
-        'rain-poem': 'i-carbon-rain-heavy', 'wish-sign': 'i-carbon-sun', 'share-reward': 'i-carbon-share',
+        'rain-poem': 'i-carbon-rain-heavy',
+        'wish-sign': 'i-carbon-sun',
+        'share-reward': 'i-carbon-share',
       }[adapted || ''] || 'i-carbon-calendar',
       image: adapted === 'milk-tea' ? '/activity/milk-tea/img_s4Main_bg.png' : adapted === 'pet-diary' ? '/activity/pet-diary/scene-home-adult.webp?v=20260912' : adapted === 'wish-sign' ? '/activity/wish-sign/card-bg.svg' : adapted === 'share-reward' ? '/activity/share-reward/card-bg.svg' : group.imageUrl || (adapted === 'rain-poem' ? '/activity/rain-poem/day-rain-bg.jpg' : ''),
       imagePosition: adapted === 'pet-diary' ? 'center 64%' : 'center',
@@ -244,12 +219,7 @@ const activityCards = computed(() => {
       },
     }
   })
-  cards.push({ permanent: true, key: 'solar-terms', activityIds: [], adaptedKey: null,
-    title: '节令小札', description: '查看各节令赠礼与领取状态', icon: 'i-carbon-notebook',
-    image: '', imagePosition: 'center', window: { startMs: 0, endMs: 0 },
-    updatedMs: Date.parse('2026-10-15T00:00:00+08:00'), status: 'active', pending: false,
-    backgroundStyle: { background: '#385c46' },
-  })
+  cards.push({ permanent: true, key: 'solar-terms', activityIds: [], adaptedKey: null, title: '节令小札', description: '查看各节令赠礼与领取状态', icon: 'i-carbon-notebook', image: '', imagePosition: 'center', window: { startMs: 0, endMs: 0 }, updatedMs: Date.parse('2026-10-15T00:00:00+08:00'), status: 'active', pending: false, backgroundStyle: { background: '#385c46' } })
   return cards.sort((left, right) => {
     return right.updatedMs - left.updatedMs
       || right.window.startMs - left.window.startMs
@@ -371,24 +341,20 @@ async function rescanActivityDirectory() {
 }
 
 async function refreshAll() {
-  if (currentAccountId.value && !rainPoemLoading.value && !heluLoading.value && !qixiLoading.value) {
-    const requests = []
-    if (SHOW_STAR_ACTIVITY)
-      requests.push(activityStore.fetchHeluActivity(String(currentAccountId.value)))
-    if (SHOW_QIXI_ACTIVITY)
-      requests.push(activityStore.fetchQixiActivity(String(currentAccountId.value)))
-    if (rainPoemActivityActive.value)
-      requests.push(activityStore.fetchRainPoemActivity(String(currentAccountId.value)))
-    if (charityFlowerActivityActive.value)
-      requests.push(activityStore.fetchCharityFlowerActivity(String(currentAccountId.value)))
-    if (wishSignActivityActive.value)
-      requests.push(activityStore.fetchWishSignActivity(String(currentAccountId.value)))
-    if (shareRewardActivityActive.value)
-      requests.push(activityStore.fetchShareRewardActivity(String(currentAccountId.value)))
-    // 萌宠日记不在此处拉取：PetDiaryActivityPanel 自己订阅 usePetDiaryStore，
-    // 走 /api/activity/pet-diary/state 完整快照，无需旧只读接口。
-    await Promise.all(requests)
-  }
+  const accountId = currentAccountId.value
+  if (!accountId || rainPoemLoading.value)
+    return
+
+  const requests = []
+  if (rainPoemActivityActive.value)
+    requests.push(activityStore.fetchRainPoemActivity(String(accountId)))
+  if (charityFlowerActivityActive.value)
+    requests.push(activityStore.fetchCharityFlowerActivity(String(accountId)))
+  if (wishSignActivityActive.value)
+    requests.push(activityStore.fetchWishSignActivity(String(accountId)))
+  if (shareRewardActivityActive.value)
+    requests.push(activityStore.fetchShareRewardActivity(String(accountId)))
+  await Promise.all(requests)
 }
 
 function handleVisibilityChange() {
@@ -396,66 +362,6 @@ function handleVisibilityChange() {
     nowMs.value = Date.now()
     refreshAll()
   }
-}
-
-async function buildQixi() {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.buildQixiBridge(String(currentAccountId.value))
-  result?.ok ? toast.success(result.completed ? '鹊桥已全部完成' : '驻建鹊桥成功') : toast.error(result?.error || '驻建鹊桥失败')
-}
-async function useQixiDew() {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.useQixiDew(String(currentAccountId.value))
-  result?.ok
-    ? toast.success(result.usedCount ? `已使用 ${result.usedCount} 个鹊羽灵露` : result.reason === 'daily_limit' ? '今日使用次数已达上限' : '暂无符合条件的土地')
-    : toast.error(result?.error || '使用鹊羽灵露失败')
-}
-
-async function giftQixi(friendGid: number, count: number) {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.sendQixiSachet(String(currentAccountId.value), friendGid, count)
-  result?.ok ? toast.success(`已赠送 ${result.sentCount || count} 个鹊羽香囊`) : toast.error(result?.error || '香囊赠送失败')
-}
-
-async function claimRecords() {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.claimStarRecords(currentAccountId.value)
-  if (result?.ok) {
-    const count = result.recordIds?.length || 0
-    toast.success(count ? `已点亮并领取 ${count} 个星宿奖励` : '观星礼录领取完成')
-  }
-  else {
-    toast.error(result?.error || '观星礼录领取失败')
-  }
-}
-
-async function claimPassport() {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.claimHeluPassport(currentAccountId.value)
-  result?.ok ? toast.success('千星游记奖励领取完成') : toast.error(result?.error || '千星游记领取失败')
-}
-
-async function claimSolar(term: { id: number, title?: string }) {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.claimHeluSolar(currentAccountId.value, term.id)
-  result?.ok
-    ? toast.success(`节令小札领取完成：${term.title || term.id}`)
-    : toast.error(result?.error || '节令小札领取失败')
-}
-
-async function exchangeStarSand(item: { id: number, itemName?: string, name?: string }, count: number) {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.exchangeStarSand(currentAccountId.value, item.id, count)
-  result?.ok
-    ? toast.success(`${L.exchangeDone}${item.itemName || item.name || item.id} ×${count}`)
-    : toast.error(result?.error || L.exchangeFail)
 }
 
 watch(currentAccountId, () => {
@@ -496,61 +402,6 @@ onUnmounted(() => {
 
 <template>
   <section class="space-y-4">
-    <header v-if="SHOW_STAR_ACTIVITY" class="relative min-h-40 overflow-hidden rounded-lg bg-[#071b43] shadow-sm">
-      <img
-        src="/activity/star-festival/star-sky.png"
-        alt=""
-        class="absolute inset-0 h-full w-full object-cover opacity-80"
-      >
-      <div class="absolute inset-0 from-[#061632]/95 via-[#0b2e61]/80 to-[#0b2e61]/25 bg-gradient-to-r" />
-      <img
-        src="/activity/star-festival/star-farm.png"
-        alt=""
-        class="pointer-events-none absolute right-0 hidden h-96 w-96 object-contain opacity-85 -bottom-32 lg:block"
-      >
-
-      <div class="relative min-h-40 flex flex-col justify-between gap-4 p-4 xl:flex-row xl:items-center">
-        <div class="min-w-0">
-          <img
-            src="/activity/star-festival/event-title.png"
-            :alt="activity?.title || L.heluTitle"
-            class="h-auto max-w-full w-72 object-contain object-left"
-          >
-          <div class="mt-1 text-xs text-sky-100/75">
-            活动中心 · {{ L.currentAccount }} {{ currentAccount?.name || L.none }}
-          </div>
-        </div>
-        <div class="min-w-0 flex flex-wrap items-center gap-2 xl:max-w-[68%] xl:justify-end">
-          <span class="inline-flex items-center border border-sky-200/20 rounded-lg bg-[#071b43]/70 px-3 py-1.5 text-xs text-sky-50 backdrop-blur-sm">
-            <img src="/activity/star-festival/star-token.png" alt="" class="mr-1.5 h-5 w-7 object-contain">
-            {{ L.heluBalance }} {{ Number(activity?.starSandBalance || 0).toLocaleString() }}
-          </span>
-          <div class="max-w-full overflow-x-auto">
-            <div class="min-w-max inline-flex border border-sky-200/20 rounded-lg bg-[#071b43]/70 p-0.5 backdrop-blur-sm">
-              <button
-                v-for="section in sections"
-                :key="section.key"
-                class="rounded-md px-3 py-1.5 text-sm transition"
-                :class="activeSection === section.key ? 'text-white' : 'text-sky-100/80 hover:text-white'"
-                :style="activeSection === section.key ? { backgroundColor: 'var(--theme-primary)' } : {}"
-                @click="activeSection = section.key"
-              >
-                {{ section.label }}
-                <span v-if="section.count" class="ml-1 opacity-80">{{ section.count }}</span>
-              </button>
-            </div>
-          </div>
-          <BaseButton variant="primary" :loading="heluLoading" :disabled="!currentAccountId" @click="refreshAll">
-            {{ L.refresh }}
-          </BaseButton>
-          <BaseButton v-if="userStore.isAdmin" variant="secondary" :loading="activityScanLoading" @click="rescanActivityDirectory">
-            <span class="i-carbon-renew mr-1.5" />
-            更新活动目录
-          </BaseButton>
-        </div>
-      </div>
-    </header>
-
     <section v-if="!selectedActivity" class="space-y-4">
       <header class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-3">
@@ -651,14 +502,22 @@ onUnmounted(() => {
       </div>
     </div>
     <div v-else-if="selectedActivityCard?.adaptedKey === 'wish-sign' && selectedActivityCard.status === 'active'" class="space-y-3">
-      <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null"><span class="i-carbon-arrow-left" />返回活动列表</button>
+      <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null">
+        <span class="i-carbon-arrow-left" />返回活动列表
+      </button>
       <WishShareActivityPanel v-if="wishSignActivityActive && currentAccountId" kind="wish" :activity="wishSignActivity" :loading="wishSignLoading" @refresh="refreshAll" />
-      <div v-else-if="wishSignActivityActive && !currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">{{ L.needAccount }}</div>
+      <div v-else-if="wishSignActivityActive && !currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
+        {{ L.needAccount }}
+      </div>
     </div>
     <div v-else-if="selectedActivityCard?.adaptedKey === 'share-reward' && selectedActivityCard.status === 'active'" class="space-y-3">
-      <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null"><span class="i-carbon-arrow-left" />返回活动列表</button>
+      <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null">
+        <span class="i-carbon-arrow-left" />返回活动列表
+      </button>
       <WishShareActivityPanel v-if="shareRewardActivityActive && currentAccountId" kind="share" :activity="shareRewardActivity" :loading="shareRewardLoading" @refresh="refreshAll" />
-      <div v-else-if="shareRewardActivityActive && !currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">{{ L.needAccount }}</div>
+      <div v-else-if="shareRewardActivityActive && !currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
+        {{ L.needAccount }}
+      </div>
     </div>
     <!--
       萌宠日记面板自带游戏风格顶栏与返回按钮，且直接读 usePetDiaryStore，
@@ -667,7 +526,7 @@ onUnmounted(() => {
     <div v-else-if="selectedActivityCard?.adaptedKey === 'milk-tea' && selectedActivityCard.status === 'active'">
       <MilkTeaActivityPanel @back="selectedActivity = null" />
     </div>
-    <div v-else-if="selectedActivityCard?.adaptedKey === 'pet-diary'  && selectedActivityCard.status === 'active'">
+    <div v-else-if="selectedActivityCard?.adaptedKey === 'pet-diary' && selectedActivityCard.status === 'active'">
       <PetDiaryActivityPanel v-if="petDiaryActivityActive && currentAccountId" @back="selectedActivity = null" />
       <div v-else-if="petDiaryActivityActive && !currentAccountId" class="space-y-3">
         <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null">
@@ -842,61 +701,14 @@ onUnmounted(() => {
     <div v-else-if="!currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
       {{ L.needAccount }}
     </div>
-    <template v-else>
-      <div v-if="heluError" class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-300">
-        {{ heluError }}
+    <div v-else class="space-y-3">
+      <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null">
+        <span class="i-carbon-arrow-left" />
+        返回活动列表
+      </button>
+      <div class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
+        活动信息已更新，请返回列表重新选择。
       </div>
-      <div v-if="activity?.warning" class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-100">
-        {{ activity.warning }}
-      </div>
-      <div v-if="heluLoading && !activity" class="rounded-lg bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:bg-sky-900/20 dark:text-sky-100">
-        {{ L.loading }}
-      </div>
-
-      <StarRecordPanel
-        v-if="activeSection === 'records'"
-        :record="activity?.starRecord"
-        :loading="starRecordClaimLoading"
-        @claim="claimRecords"
-      />
-      <QixiActivityPanel
-        v-else-if="SHOW_QIXI_ACTIVITY && activeSection === 'qixi'"
-        :activity="qixiActivity"
-        :friends="qixiFriends"
-        :build-loading="qixiBuildLoading || qixiLoading"
-        :gift-loading="qixiGiftLoading"
-        :dew-loading="qixiDewLoading"
-        @build="buildQixi"
-        @dew="useQixiDew"
-        @gift="giftQixi"
-      />
-      <div v-else-if="activeSection === 'shop'" class="space-y-3">
-        <div v-if="activity?.shopWarning" class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-100">
-          {{ activity.shopWarning }}
-        </div>
-        <HeluExchangePanel
-          :items="activity?.exchangeShop || []"
-          :balance="activity?.starSandBalance || 0"
-          :exchange-loading="exchangeLoading"
-          :read-only="activity?.shopReadOnly"
-          :labels="L"
-          @exchange="exchangeStarSand"
-        />
-      </div>
-      <HeluPassportPanel
-        v-else-if="activeSection === 'journey'"
-        :passport="activity?.passport"
-        :loading="passportClaimLoading"
-        :labels="L"
-        @claim="claimPassport"
-      />
-      <HeluSolarTermsPanel
-        v-else
-        :solar-terms="activity?.solarTerms"
-        :loading="solarClaimLoading"
-        :labels="L"
-        @claim="claimSolar"
-      />
-    </template>
+    </div>
   </section>
 </template>

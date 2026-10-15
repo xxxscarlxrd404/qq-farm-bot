@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 let pushoo = null;
 try {
@@ -62,14 +62,12 @@ function parsePushResult(result) {
 }
 
 /**
- * 通过 pushoo 发送多渠道推送。
+ * 通过 pushoo 发送 Qmsg 酱或 Bark 通知。
  * @param {object} payload
- * @param {string} payload.channel
- * @param {string} [payload.endpoint]
  * @param {string} payload.token
  * @param {string} payload.title
  * @param {string} payload.content
- * @returns {{ ok, code, msg, raw }}
+ * @returns {Promise<{ ok: boolean, code: string, msg: string, raw: object }>} Push result.
  */
 async function sendPushooMessage(payload = {}) {
   if (!pushoo) {
@@ -77,88 +75,87 @@ async function sendPushooMessage(payload = {}) {
   }
 
   const channel = assertRequiredText('推送渠道', payload.channel).toLowerCase();
-  const endpoint = String(payload.endpoint || '').trim();
-  const rawToken = String(payload.token || '').trim();
-  const token = channel === 'webhook' ? rawToken : assertRequiredText('推送 token', rawToken);
+  if (!['qmsg', 'bark'].includes(channel)) throw new Error('仅支持 Qmsg 酱或 Bark 推送');
+  const token = assertRequiredText(channel === 'bark' ? 'Bark Key 或服务器 URL' : 'Qmsg 酱 Key', payload.token);
   const title = assertRequiredText('推送标题', payload.title);
   const content = assertRequiredText('推送内容', payload.content);
 
-  const request = { title, content };
-  if (token) request.token = token;
-  if (channel === 'webhook') {
-    request.options = {
-      webhook: {
-        url: assertRequiredText('Webhook 地址', endpoint),
-        method: 'POST',
-      },
-    };
-  }
-
-  const result = await pushoo(channel, request);
+  const result = await pushoo(channel, { token, title, content });
   return parsePushResult(result);
 }
 
 /**
- * 通过 SMTP 发送邮件（用于下线提醒等推送）
- * @param {object} options - 邮件配置
- * @param {string} options.smtpHost - SMTP 服务器地址
- * @param {number} options.smtpPort - SMTP 端口（默认 465）
- * @param {string} options.smtpUser - 邮箱账号
- * @param {string} options.smtpPass - 授权码
- * @param {string} options.senderName - 发件人名称
- * @param {string} options.recipientEmail - 收件人邮箱
- * @param {string} options.subject - 邮件主题
- * @param {string} options.content - 邮件内容
- * @returns {{ ok, code, msg, raw }}
+ * Send a plain-text notification through WxPusher's Simple Push Token API.
+ * @param {object} payload
+ * @param {string} payload.token
+ * @param {string} payload.title
+ * @param {string} payload.content
+ * @returns {Promise<{ ok: boolean, code: string, msg: string, raw: object }>} Push result.
  */
-async function sendSmtpEmail(options = {}) {
-  const smtpHost = String(options.smtpHost || '').trim();
-  const smtpPort = Number(options.smtpPort) || 465;
-  const smtpUser = String(options.smtpUser || '').trim();
-  const smtpPass = String(options.smtpPass || '').trim();
-  const senderName = String(options.senderName || '').trim();
-  const recipientEmail = String(options.recipientEmail || '').trim();
-  const subject = String(options.subject || '下线提醒').trim();
-  const content = String(options.content || '').trim();
-
-  // 参数校验
-  if (!smtpHost) throw new Error('SMTP服务器地址不能为空');
-  if (!smtpUser) throw new Error('邮箱账号不能为空');
-  if (!smtpPass) throw new Error('授权码不能为空');
-  if (!recipientEmail) throw new Error('收件人邮箱不能为空');
-  if (!content) throw new Error('邮件内容不能为空');
-
-  const from = senderName
-    ? `"${senderName}" <${smtpUser}>`
-    : smtpUser;
-
-  const transport = nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort === 465,  // 465 端口使用 SSL
-    auth: {
-      user: smtpUser,
-      pass: smtpPass
-    }
+async function sendWxPusherMessage(payload = {}, post = axios.post) {
+  const spt = assertRequiredText('WxPusher SPT', payload.token);
+  if (!spt.startsWith('SPT_')) throw new Error('WxPusher SPT 必须以 SPT_ 开头');
+  const title = assertRequiredText('推送标题', payload.title);
+  const content = assertRequiredText('推送内容', payload.content);
+  const response = await post('https://wxpusher.zjiecode.com/api/send/message/simple-push', {
+    spt,
+    content,
+    summary: title.slice(0, 100),
+    contentType: 1,
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 15000,
   });
 
-  const mailOptions = {
-    from,
-    to: recipientEmail,
-    subject,
-    text: content
-  };
-
-  const raw = await transport.sendMail(mailOptions);
+  const raw = response && response.data;
+  const code = raw && raw.code !== undefined ? String(raw.code) : '';
+  const ok = code === '1000';
   return {
-    ok: true,
-    code: 'ok',
-    msg: '邮件发送成功',
-    raw
+    ok,
+    code: code || 'error',
+    msg: String(raw && (raw.msg || raw.message) || (ok ? '发送成功' : 'WxPusher 消息发送失败')),
+    raw,
+  };
+}
+
+/**
+ * Send a notification through WxPusher's standard API to one subscribed UID.
+ * @param {object} payload
+ * @param {string} payload.token WxPusher application token.
+ * @param {string} payload.wxPusherUid Subscribed recipient UID.
+ * @param {string} payload.title
+ * @param {string} payload.content
+ * @returns {Promise<{ ok: boolean, code: string, msg: string, raw: object }>} Push result.
+ */
+async function sendWxPusherWechatMessage(payload = {}, post = axios.post) {
+  const appToken = assertRequiredText('WxPusher AppToken', payload.token);
+  const uid = assertRequiredText('WxPusher 接收者 UID', payload.wxPusherUid);
+  const title = assertRequiredText('推送标题', payload.title);
+  const content = assertRequiredText('推送内容', payload.content);
+  const response = await post('https://wxpusher.zjiecode.com/api/send/message', {
+    appToken,
+    uids: [uid],
+    content,
+    summary: title.slice(0, 100),
+    contentType: 1,
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 15000,
+  });
+
+  const raw = response && response.data;
+  const code = raw && raw.code !== undefined ? String(raw.code) : '';
+  const ok = code === '1000';
+  return {
+    ok,
+    code: code || 'error',
+    msg: String(raw && (raw.msg || raw.message) || (ok ? '发送成功' : 'WxPusher 微信消息发送失败')),
+    raw,
   };
 }
 
 module.exports = {
-  sendSmtpEmail,
-  sendPushooMessage
+  sendPushooMessage,
+  sendWxPusherMessage,
+  sendWxPusherWechatMessage,
 };

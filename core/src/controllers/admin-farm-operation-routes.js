@@ -54,6 +54,42 @@ function registerAdminFarmOperationRoutes({
     }
   });
 
+  app.post("/api/farm/fertilize", async (req, res) => {
+    const accountId = requireAccountAccess({
+      req,
+      res,
+      getAccountIdFromRequest,
+      canAccessAccount,
+      includeMissingMessage: false,
+    });
+    if (!accountId) return;
+
+    try {
+      const data = await provider.fertilizeAll(accountId);
+      res.json({ ok: true, data });
+    } catch (error) {
+      sendProviderError(res, error);
+    }
+  });
+
+  app.post("/api/farm/fertilize-organic", async (req, res) => {
+    const accountId = requireAccountAccess({
+      req,
+      res,
+      getAccountIdFromRequest,
+      canAccessAccount,
+      includeMissingMessage: false,
+    });
+    if (!accountId) return;
+
+    try {
+      const data = await provider.fertilizeOrganicAll(accountId);
+      res.json({ ok: true, data });
+    } catch (error) {
+      sendProviderError(res, error);
+    }
+  });
+
   app.post("/api/land/fertilize", async (req, res) => {
     const accountId = requireAccountAccess({
       req,

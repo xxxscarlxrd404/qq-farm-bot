@@ -4,7 +4,7 @@ const process = require('node:process');
 const { Worker } = require('node:worker_threads');
 const store = require('../models/store');
 const { getRuntimeConfig, updateRuntimeConfig } = require('../config/config');
-const { sendPushooMessage, sendSmtpEmail } = require('../services/push');
+const { sendPushooMessage, sendWxPusherMessage, sendWxPusherWechatMessage } = require('../services/push');
 const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { createAutoCodeRefreshService } = require('./auto-code-refresh');
 const { createDataProvider } = require('./data-provider');
@@ -74,7 +74,8 @@ function createRuntimeEngine(options = {}) {
         store,
         miniProgramLoginSession: MiniProgramLoginSession,
         sendPushooMessage,
-        sendSmtpEmail,
+        sendWxPusherMessage,
+        sendWxPusherWechatMessage,
         log,
         addAccountLog,
         getAccounts: store.getAccounts,
@@ -160,6 +161,7 @@ function createRuntimeEngine(options = {}) {
         restartWorker,
         getResourceStatus,
         scheduleAutoCodeRefresh: autoCodeRefresh.scheduleAccount,
+        rescheduleAllAutoCodeRefresh: autoCodeRefresh.rescheduleAll,
         refreshAccountCode: autoCodeRefresh.refreshAccountCode
     };
     const dataProvider = createDataProvider(dataProviderDeps);
@@ -198,19 +200,6 @@ function createRuntimeEngine(options = {}) {
             log('系统', `发现 ${  accounts.length  } 个账号，正在启动...`);
             let launchedInBatch = 0;
             for (const acc of accounts) {
-                // 为移植前已扫码保存凭证的微信账号执行一次默认策略迁移。
-                if (acc.platform === 'wx' && acc.loginBuffer && acc.wxDefaultsApplied !== true) {
-                    const currentRefresh = store.getAutoCodeRefresh(acc.id);
-                    store.setAutoCodeRefresh(acc.id, {
-                        enabled: true,
-                        intervalMinutes: currentRefresh.intervalMinutes || 60
-                    });
-                    store.addOrUpdateAccount({ id: acc.id, wxDefaultsApplied: true });
-                    acc.wxDefaultsApplied = true;
-                    log('系统', `已为微信扫码账号 ${acc.name} 默认开启自动刷新 Code`, {
-                        accountId: String(acc.id), accountName: acc.name
-                    });
-                }
                 if (acc.platform === 'wx' && acc.loginBuffer) {
                     const refreshed = await autoCodeRefresh.refreshAccountCode(acc.id, 'startup');
                     if (!refreshed) startWorker(acc);

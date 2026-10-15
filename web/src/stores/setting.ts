@@ -98,18 +98,12 @@ export interface FriendQuietHoursConfig {
 export interface OfflineConfig {
   channel: string
   reloginUrlMode: string
-  endpoint: string
   token: string
+  wxPusherUid: string
+  channelCredentials: Record<string, { token: string, wxPusherUid: string }>
   title: string
   msg: string
   offlineDeleteSec: number
-  smtpHost: string
-  smtpPort: number
-  smtpUser: string
-  smtpPass: string
-  senderName: string
-  recipientEmail: string
-  emailContent: string
 }
 
 export interface OfflineConfigSavePayload extends OfflineConfig {
@@ -124,6 +118,7 @@ export interface UIConfig {
 export interface AutoCodeRefreshConfig {
   enabled: boolean
   intervalMinutes: number
+  maxRetries: number
 }
 
 export interface SettingsState {
@@ -137,7 +132,6 @@ export interface SettingsState {
   intervals: IntervalsConfig
   friendQuietHours: FriendQuietHoursConfig
   automation: AutomationConfig
-  autoCodeRefresh: AutoCodeRefreshConfig
   ui: UIConfig
   offlineReminder: OfflineConfig
   fertilizerBuyOrganicCount: number
@@ -150,35 +144,54 @@ export interface SettingsState {
 }
 
 function createDefaultOfflineReminder(): OfflineConfig {
+  const channelCredentials = Object.fromEntries(
+    ['qmsg', 'wxpusher', 'wxpusher_wechat', 'bark'].map(channel => [
+      channel,
+      { token: '', wxPusherUid: '' },
+    ]),
+  )
   return {
-    channel: 'smtp',
+    channel: 'qmsg',
     reloginUrlMode: 'none',
-    endpoint: '',
     token: '',
+    wxPusherUid: '',
+    channelCredentials,
     title: '账号下线提醒',
     msg: '账号下线',
     offlineDeleteSec: 0,
-    smtpHost: '',
-    smtpPort: 465,
-    smtpUser: '',
-    smtpPass: '',
-    senderName: '',
-    recipientEmail: '',
-    emailContent: '',
   }
 }
 
 function createDefaultAutoCodeRefresh(): AutoCodeRefreshConfig {
   return {
-    enabled: false,
-    intervalMinutes: 60,
+    enabled: true,
+    intervalMinutes: 2,
+    maxRetries: 8,
   }
 }
 
 function normalizeOfflineReminder(input: Partial<OfflineConfig> | null | undefined): OfflineConfig {
+  const defaults = createDefaultOfflineReminder()
+  const channel = input?.channel || defaults.channel
+  const channelCredentials = { ...defaults.channelCredentials }
+  for (const [key, credentials] of Object.entries(input?.channelCredentials || {})) {
+    channelCredentials[key] = {
+      token: String(credentials?.token || ''),
+      wxPusherUid: String(credentials?.wxPusherUid || ''),
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(input?.channelCredentials || {}, channel)) {
+    channelCredentials[channel] = {
+      token: String(input?.token || ''),
+      wxPusherUid: String(input?.wxPusherUid || ''),
+    }
+  }
   return {
-    ...createDefaultOfflineReminder(),
+    ...defaults,
     ...(input || {}),
+    channelCredentials,
+    token: channelCredentials[channel]?.token || '',
+    wxPusherUid: channelCredentials[channel]?.wxPusherUid || '',
   }
 }
 
@@ -194,7 +207,6 @@ export const useSettingStore = defineStore('setting', () => {
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
     automation: {},
-    autoCodeRefresh: createDefaultAutoCodeRefresh(),
     ui: {},
     offlineReminder: createDefaultOfflineReminder(),
     fertilizerBuyOrganicCount: 10,
@@ -205,7 +217,9 @@ export const useSettingStore = defineStore('setting', () => {
     goldenBugKeepCount: 0,
     goldenBugRoundLimit: 24,
   })
+  const autoCodeRefresh = ref<AutoCodeRefreshConfig>(createDefaultAutoCodeRefresh())
   const loading = ref(false)
+  const autoCodeRefreshLoading = ref(false)
   let fetchRequestId = 0
 
   function isCurrentAccount(accountId: string) {
@@ -226,7 +240,6 @@ export const useSettingStore = defineStore('setting', () => {
       intervals: {},
       friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
       automation: {},
-      autoCodeRefresh: createDefaultAutoCodeRefresh(),
       ui: {},
       offlineReminder: createDefaultOfflineReminder(),
       fertilizerBuyOrganicCount: 10,
@@ -260,10 +273,6 @@ export const useSettingStore = defineStore('setting', () => {
         settings.value.intervals = d.intervals || {}
         settings.value.friendQuietHours = d.friendQuietHours || { enabled: false, start: '23:00', end: '07:00' }
         settings.value.automation = d.automation || {}
-        settings.value.autoCodeRefresh = {
-          ...createDefaultAutoCodeRefresh(),
-          ...(d.autoCodeRefresh || {}),
-        }
         settings.value.ui = d.ui || {}
         settings.value.autoAcceptFriendMinLevel = d.autoAcceptFriendMinLevel ?? 0
         settings.value.offlineReminder = normalizeOfflineReminder(d.offlineReminder)
@@ -298,7 +307,6 @@ export const useSettingStore = defineStore('setting', () => {
         bagSeedKnownIds: newSettings.bagSeedKnownIds ?? [],
         bagSeedFallbackStrategy: newSettings.bagSeedFallbackStrategy ?? 'level',
         autoAcceptFriendMinLevel: newSettings.autoAcceptFriendMinLevel ?? 0,
-        autoCodeRefresh: newSettings.autoCodeRefresh,
         intervals: newSettings.intervals,
         friendQuietHours: newSettings.friendQuietHours,
         fertilizerBuyOrganicCount: newSettings.fertilizerBuyOrganicCount ?? 10,
@@ -328,12 +336,16 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  async function saveOfflineConfig(config: OfflineConfigSavePayload) {
+  async function saveOfflineConfig(config: OfflineConfigSavePayload, accountId: string) {
+    if (!accountId)
+      return { ok: false, error: '未选择账号' }
     loading.value = true
     try {
-      const { data } = await api.post('/api/settings/offline-reminder', config)
+      const { data } = await api.post('/api/settings/offline-reminder', config, {
+        headers: { 'x-account-id': accountId },
+      })
       if (data && data.ok) {
-        settings.value.offlineReminder = normalizeOfflineReminder(config)
+        settings.value.offlineReminder = normalizeOfflineReminder(data.data || config)
         return { ok: true }
       }
       return { ok: false, error: '保存失败' }
@@ -343,18 +355,34 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  async function saveAutoCodeRefresh(accountId: string, config: AutoCodeRefreshConfig) {
-    if (!accountId)
-      return { ok: false, error: '未选择账号' }
-    loading.value = true
+  async function fetchAutoCodeRefresh() {
+    autoCodeRefreshLoading.value = true
     try {
-      const { data } = await api.post('/api/settings/auto-code-refresh', config, {
-        headers: { 'x-account-id': accountId },
-      })
+      const { data } = await api.get('/api/settings/auto-code-refresh')
+      if (!data?.ok)
+        return { ok: false, error: data?.error || '读取失败' }
+      autoCodeRefresh.value = {
+        ...createDefaultAutoCodeRefresh(),
+        ...(data.data || {}),
+      }
+      return { ok: true }
+    }
+    catch (e: any) {
+      return { ok: false, error: e.response?.data?.error || e.message }
+    }
+    finally {
+      autoCodeRefreshLoading.value = false
+    }
+  }
+
+  async function saveAutoCodeRefresh(config: AutoCodeRefreshConfig) {
+    autoCodeRefreshLoading.value = true
+    try {
+      const { data } = await api.post('/api/settings/auto-code-refresh', config)
       if (data && data.ok) {
-        settings.value.autoCodeRefresh = {
+        autoCodeRefresh.value = {
           ...createDefaultAutoCodeRefresh(),
-          ...(data.data?.autoCodeRefresh || config),
+          ...(data.data || config),
         }
         return { ok: true }
       }
@@ -364,7 +392,7 @@ export const useSettingStore = defineStore('setting', () => {
       return { ok: false, error: e.response?.data?.error || e.message }
     }
     finally {
-      loading.value = false
+      autoCodeRefreshLoading.value = false
     }
   }
 
@@ -387,8 +415,11 @@ export const useSettingStore = defineStore('setting', () => {
   return {
     settings,
     loading,
+    autoCodeRefresh,
+    autoCodeRefreshLoading,
     clearSettingsState,
     fetchSettings,
+    fetchAutoCodeRefresh,
     saveSettings,
     saveOfflineConfig,
     saveAutoCodeRefresh,

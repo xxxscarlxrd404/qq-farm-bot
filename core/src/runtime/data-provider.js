@@ -26,6 +26,7 @@ function createDataProvider(deps) {
         restartWorker,
         getResourceStatus,
         scheduleAutoCodeRefresh,
+        rescheduleAllAutoCodeRefresh,
         refreshAccountCode
     } = deps;
 
@@ -180,6 +181,8 @@ function createDataProvider(deps) {
         feedDog: (ref, foodId, count) => callWorkerApi(resolveAccountId(ref), 'feedDog', foodId, count),
         getProtectLogs: (ref) => callWorkerApi(resolveAccountId(ref), 'getProtectLogs'),
         doFarmOp: (ref, op) => callWorkerApi(resolveAccountId(ref), 'doFarmOp', op),
+        fertilizeAll: (ref) => callWorkerApi(resolveAccountId(ref), 'fertilizeAll'),
+        fertilizeOrganicAll: (ref) => callWorkerApi(resolveAccountId(ref), 'fertilizeOrganicAll'),
         buyFertilizer: (ref, type, count) => callWorkerApi(resolveAccountId(ref), 'buyFertilizer', type, count),
         checkAndBuyFertilizer: (ref, opts) => callWorkerApi(resolveAccountId(ref), 'checkAndBuyFertilizer', opts),
         fertilizeLand: (ref, landId) => callWorkerApi(resolveAccountId(ref), 'fertilizeLand', landId),
@@ -284,7 +287,6 @@ function createDataProvider(deps) {
                 prioritizeGrowthTasks: s.prioritizeGrowthTasks,
                 intervals: s.intervals,
                 friendQuietHours: s.friendQuietHours,
-                autoCodeRefresh: s.autoCodeRefresh,
                 fertilizerBuyOrganicCount: s.fertilizerBuyOrganicCount,
                 fertilizerBuyOrganicThresholdHours: s.fertilizerBuyOrganicThresholdHours,
                 fertilizerBuyNormalCount: s.fertilizerBuyNormalCount,
@@ -300,16 +302,12 @@ function createDataProvider(deps) {
             store.applyConfigSnapshot(patch, { accountId: id });
             const rev = nextConfigRevision();
             broadcastConfigToWorkers(id);
-            if (s.autoCodeRefresh && typeof scheduleAutoCodeRefresh === 'function') {
-                scheduleAutoCodeRefresh(id);
-            }
             return {
                 strategy: store.getPlantingStrategy(id),
                 prioritize2x2Crops: store.getPrioritize2x2Crops(id),
                 prioritizeGrowthTasks: store.getPrioritizeGrowthTasks(id),
                 intervals: store.getIntervals(id),
                 friendQuietHours: store.getFriendQuietHours(id),
-                autoCodeRefresh: store.getAutoCodeRefresh(id),
                 fertilizerBuyOrganicCount: store.getFertilizerBuyOrganicCount(id),
                 fertilizerBuyOrganicThresholdHours: store.getFertilizerBuyOrganicThresholdHours(id),
                 fertilizerBuyNormalCount: store.getFertilizerBuyNormalCount(id),
@@ -332,11 +330,9 @@ function createDataProvider(deps) {
             return true;
         },
 
-        saveAutoCodeRefresh: async (ref, config) => {
-            const id = resolveAccountId(ref);
-            if (!id) throw new Error('Missing x-account-id');
-            const data = store.setAutoCodeRefresh(id, config || {});
-            if (typeof scheduleAutoCodeRefresh === 'function') scheduleAutoCodeRefresh(id);
+        saveAutoCodeRefresh: async (config) => {
+            const data = store.setAutoCodeRefresh(config || {});
+            if (typeof rescheduleAllAutoCodeRefresh === 'function') rescheduleAllAutoCodeRefresh();
             return { autoCodeRefresh: data };
         },
 

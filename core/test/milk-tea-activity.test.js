@@ -19,6 +19,21 @@ test('official encoder fixed vectors retain every command, selector and nested p
     assert.equal(Number(reply.cmd), vector.request.cmd);
   }
 });
+test('missing purchase counters fail closed without a BigInt conversion error', async () => {
+  const { service } = setup({
+    goods: [{ id: 301, name: '限购字段缺失', cost: [{ id: 1001, count: 10000 }], category_tag: 'seed' }],
+  });
+  const state = await service.getMilkTea();
+  assert.equal(state.goods[0].remaining, 0);
+  assert.equal(state.goods[0].maxPurchasable, 0);
+});
+test('missing milk tea node or summary reports response metadata', async () => {
+  const noNode = setup({ groupChildren: [] });
+  await assert.rejects(noNode.service.getMilkTea(), error => error.code === 'MILK_TEA_NOT_PARTICIPATING');
+
+  const noSummary = setup({ groupChildren: [{ head: { id: '2026110101' }, shop: { goods: [] } }] });
+  await assert.rejects(noSummary.service.getMilkTea(), /子活动 2026110101 缺少 milk_tea\.summary/);
+});
 test('recorded shop and workshop preserve map keys, stock, employee and prices', () => {
   const T = types.MilkTeaOperateReply; const data = normalizeWireMaps(T.toObject(T.decode(T.encode(T.fromObject(fixtures[282])).finish()), { longs: String }));
   assert.equal(data.milk_tea_get_shop.shop.drink_cups['2'], '19');
@@ -34,15 +49,16 @@ test('business and settlement boundaries fail closed', () => {
   assert.equal(phase(WINDOW.endTime), 'settling');
   assert.equal(phase(WINDOW.endTime + 1), 'ended');
 });
-function setup({ now = WINDOW.startTime + 100, diamond = false, unlocked = true, salesLog, panels = false, fundUnlocked = false, fundState = 1, inventory = [{ id: 1001, count: 1000000 }], account = {}, hireList, hireSuccess = true } = {}) {
+function setup({ now = WINDOW.startTime + 100, diamond = false, unlocked = true, salesLog, panels = false, fundUnlocked = false, fundState = 1, inventory = [{ id: 1001, count: 1000000 }], account = {}, accountId = '', hireList, hireSuccess = true, groupChildren, goods } = {}) {
   const calls = [];
   const logs = [];
-  const group = { group: { head: { id: '2026110100' }, children: [{ head: { id: '2026110101', start_time: WINDOW.startTime, end_time: WINDOW.endTime, settle_start_time: WINDOW.settleTime }, milk_tea: { summary: { shop_open_at: WINDOW.startTime, level: 1 } } }, { head: { id: '2026110102' }, shop: { goods: [{ id: 301, name: '森野甜莓种子', item: [{ id: 20525, count: 1 }], cost: [{ id: diamond ? 1004 : 1001, count: 10000 }], purchase_limit: 108, purchased_count: 0, category_tag: 'seed', cond_hints: [{ satisfied: unlocked, target: 3 }] }] } }] } };
+  const group = { group: { head: { id: '2026110100' }, children: [{ head: { id: '2026110101', start_time: WINDOW.startTime, end_time: WINDOW.endTime, settle_start_time: WINDOW.settleTime }, milk_tea: { summary: { shop_open_at: WINDOW.startTime, level: 1 } } }, { head: { id: '2026110102' }, shop: { goods: goods || [{ id: 301, name: '森野甜莓种子', item: [{ id: 20525, count: 1 }], cost: [{ id: diamond ? 1004 : 1001, count: 10000 }], purchase_limit: 108, purchased_count: 0, category_tag: 'seed', cond_hints: [{ satisfied: unlocked, target: 3 }] }] } }] } };
+  if (groupChildren) group.group.children = groupChildren;
   if (panels) group.group.children.push(
     { head: { id: '2026110104' }, share_reward: { summary: { current_score: 10, milestones: [{ tier_id: 1, threshold: 10, state: 2, rewards: [{ id: '80014', count: '1' }] }] } } },
     { head: { id: '2026110103' }, growth_fund: { unlocked: fundUnlocked, unlock_cost: [{ id: '1004', count: '360' }], tiers: [{ tier_id: 1, state: fundState, conditions: [{ type: 'milk_tea_store_level', current_value: 1, target_value: 1, reached: true }], reward: [{ id: '29005', count: '2' }] }] } }
   );
-  const service = createMilkTeaService({ log: (...args) => logs.push(args), types, getServerTimeSec: () => now, getUserState: () => account, log: (...args) => logs.push(args), getBag: async () => inventory, getBagItems: x => x, itemDto: x => ({ ...x, name: '夹具物品' }), sendMsgAsync: async (_, method, bytes) => {
+  const service = createMilkTeaService({ accountId, log: (...args) => logs.push(args), types, getServerTimeSec: () => now, getUserState: () => account, getBag: async () => inventory, getBagItems: x => x, itemDto: x => ({ ...x, name: '夹具物品' }), sendMsgAsync: async (_, method, bytes) => {
     if (method === 'GetGroup') return { body: types.MilkTeaGetGroupReply.encode(types.MilkTeaGetGroupReply.fromObject(group)).finish() };
     const req = types.MilkTeaOperateRequest.toObject(types.MilkTeaOperateRequest.decode(bytes), { longs: String });calls.push(req);
     const fixture = Number(req.cmd) === 56 && hireList ? { id: req.id, cmd: req.cmd, milk_tea_get_hire_list: hireList } : Number(req.cmd) === 57 ? { id: req.id, cmd: req.cmd, milk_tea_hire: { results: [{ success: hireSuccess }] } } : Number(req.cmd) === 55 ? fixtures[282] : Number(req.cmd) === 58 ? fixtures[283] : Number(req.cmd) === 63 ? fixtures[206] : Number(req.cmd) === 67 && salesLog ? { id: req.id, cmd: req.cmd, milk_tea_get_sales_log: salesLog } : { id: req.id, cmd: req.cmd };
@@ -272,11 +288,12 @@ test('hire preferences retain numeric values through config patch and reload nor
 });
 
 test('milk tea logs localized outcomes, hire fallback and skips without dumping payloads', async () => {
-  const { service, logs } = setup({ inventory: [{ id: 1041, count: 1000 }], hireList: { wage_total: 40, friends: [employee(222, 9002)] } });
+  const { service, logs } = setup({ accountId: 'test-account-2', inventory: [{ id: 1041, count: 1000 }], hireList: { wage_total: 40, friends: [employee(222, 9002)] } });
   await service.operateMilkTea('hire', { autoSelect: true, talentId: 9001 });
   assert.match(logs[0][1], /雇佣员工完成.*好友.*金牌宣传.*4小时.*40.*已兜底/);
   assert.equal(logs[0][2].module, 'activity');
   assert.equal(logs[0][2].result, 'success');
+  assert.equal(logs[0][2].accountId, 'test-account-2');
   assert.ok(!JSON.stringify(logs).includes('222'));
   const empty = setup({ hireList: { wage_total: 40 } });
   await empty.service.operateMilkTea('hire', { autoSelect: true });

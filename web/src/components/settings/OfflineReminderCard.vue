@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -6,18 +7,12 @@ import BaseSelect from '@/components/ui/BaseSelect.vue'
 interface OfflineReminderConfig {
   channel: string
   reloginUrlMode: string
-  endpoint: string
   token: string
+  wxPusherUid: string
+  channelCredentials: Record<string, { token: string, wxPusherUid: string }>
   title: string
   msg: string
   offlineDeleteSec: number
-  smtpHost: string
-  smtpPort: number
-  smtpUser: string
-  smtpPass: string
-  senderName: string
-  recipientEmail: string
-  emailContent: string
 }
 
 defineProps<{
@@ -25,6 +20,7 @@ defineProps<{
   currentChannelDocUrl: string
   saving: boolean
   testing: boolean
+  disabled?: boolean
   showSave?: boolean
 }>()
 
@@ -35,6 +31,21 @@ const emit = defineEmits<{
 }>()
 
 const config = defineModel<OfflineReminderConfig>('config', { required: true })
+
+const activeToken = computed({
+  get: () => config.value.channelCredentials[config.value.channel]?.token || '',
+  set: (token: string) => {
+    const current = config.value.channelCredentials[config.value.channel] || { token: '', wxPusherUid: '' }
+    config.value.channelCredentials[config.value.channel] = { ...current, token }
+  },
+})
+const activeWxPusherUid = computed({
+  get: () => config.value.channelCredentials[config.value.channel]?.wxPusherUid || '',
+  set: (wxPusherUid: string) => {
+    const current = config.value.channelCredentials[config.value.channel] || { token: '', wxPusherUid: '' }
+    config.value.channelCredentials[config.value.channel] = { ...current, wxPusherUid }
+  },
+})
 </script>
 
 <template>
@@ -64,103 +75,66 @@ const config = defineModel<OfflineReminderConfig>('config', { required: true })
           />
         </div>
         <BaseInput
-          v-if="config.channel !== 'smtp'"
           v-model.number="config.offlineDeleteSec"
           label="离线删除账号 (秒)"
           type="number"
           min="0"
           placeholder="0 表示不删除"
         />
-        <BaseInput
-          v-else
-          v-model.number="config.smtpPort"
-          label="SMTP 端口"
-          type="number"
-          min="1"
-          max="65535"
-          placeholder="465"
-        />
       </div>
 
-      <template v-if="config.channel === 'smtp'">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <BaseInput
-            v-model="config.smtpHost"
-            label="SMTP 服务器地址"
-            type="text"
-            placeholder="如 smtp.qq.com"
-          />
-          <BaseInput
-            v-model="config.smtpUser"
-            label="邮箱账号"
-            type="text"
-            placeholder="发件人邮箱地址"
-          />
-        </div>
-
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <BaseInput
-            v-model="config.smtpPass"
-            label="授权码"
-            type="password"
-            placeholder="SMTP 授权码"
-          />
-          <BaseInput
-            v-model="config.recipientEmail"
-            label="收件人邮箱"
-            type="text"
-            placeholder="接收通知的邮箱地址"
-          />
-        </div>
-
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <BaseInput
-            v-model="config.senderName"
-            label="发件人名称"
-            type="text"
-            placeholder="发件人显示名称"
-          />
-          <BaseInput
-            v-model="config.emailContent"
-            label="发信内容"
-            type="text"
-            placeholder="掉线提醒的自定义内容"
-          />
-        </div>
+      <template v-if="config.channel === 'wxpusher_wechat'">
+        <BaseInput
+          v-model="activeToken"
+          label="WxPusher AppToken"
+          type="password"
+          placeholder="以 AT_ 开头的应用令牌"
+        />
+        <BaseInput
+          v-model="activeWxPusherUid"
+          label="WxPusher 接收者 UID"
+          type="text"
+          placeholder="以 UID_ 开头的用户标识"
+        />
       </template>
-
-      <template v-else>
+      <template v-else-if="config.channel === 'wxpusher'">
         <BaseInput
-          v-model="config.endpoint"
-          label="接口地址"
-          type="text"
-          :disabled="config.channel !== 'webhook'"
-          placeholder="Webhook 渠道填写接口地址"
+          v-model="activeToken"
+          label="WxPusher SPT"
+          type="password"
+          placeholder="以 SPT_ 开头的极简推送令牌"
         />
-
+      </template>
+      <template v-else-if="config.channel === 'bark'">
         <BaseInput
-          v-model="config.token"
-          label="Token"
-          type="text"
-          placeholder="接收端 token"
+          v-model="activeToken"
+          label="Bark Key 或服务器 URL"
+          type="password"
+          placeholder="设备 Key 或 https://api.day.app/设备Key/"
         />
+      </template>
+      <BaseInput
+        v-else
+        v-model="activeToken"
+        label="Qmsg 酱 Key"
+        type="password"
+        placeholder="在 Qmsg 酱管理台获取"
+      />
 
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <BaseInput
-            v-model="config.title"
-            label="标题"
-            type="text"
-            placeholder="提醒标题"
-          />
-        </div>
-
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <BaseInput
+          v-model="config.title"
+          label="标题"
+          type="text"
+          placeholder="提醒标题"
+        />
         <BaseInput
           v-model="config.msg"
           label="内容"
           type="text"
           placeholder="提醒内容"
         />
-      </template>
+      </div>
     </div>
 
     <div class="mt-4 flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
@@ -168,7 +142,7 @@ const config = defineModel<OfflineReminderConfig>('config', { required: true })
         variant="secondary"
         size="sm"
         :loading="testing"
-        :disabled="saving"
+        :disabled="saving || disabled"
         @click="emit('test')"
       >
         测试通知

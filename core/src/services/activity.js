@@ -3451,7 +3451,7 @@ module.exports = {
 
 let milkTeaService;
 function getMilkTeaService() {
-  if (!milkTeaService) milkTeaService = require('./activity-milk-tea').createMilkTeaService({ types, sendMsgAsync, getBag, getBagItems, getUserState, getServerTimeSec: require('../utils/utils').getServerTimeSec, itemDto: petDiaryHelpers.itemDto });
+  if (!milkTeaService) milkTeaService = require('./activity-milk-tea').createMilkTeaService({ types, sendMsgAsync, getBag, getBagItems, getUserState, accountId: process.env.FARM_ACCOUNT_ID || '', getServerTimeSec: require('../utils/utils').getServerTimeSec, itemDto: petDiaryHelpers.itemDto });
   return milkTeaService;
 }
 module.exports.getMilkTea = () => getMilkTeaService().getMilkTea();

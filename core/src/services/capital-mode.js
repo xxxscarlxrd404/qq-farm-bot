@@ -30,7 +30,7 @@ function clearOwnership() {
 function releaseForManualCommand() { clearOwnership(); }
 
 async function prepareForFarmOperation({ lands, analysis, opType }) {
-  if (opType !== 'all' && opType !== 'harvest') return false;
+  if (opType !== 'all') return false;
   const config = getCapitalMode();
   if (!config.enabled || !config.dogId || state.phase !== 'idle') return false;
   const matureIn = findNearestMatureSeconds(lands, analysis);

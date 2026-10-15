@@ -402,8 +402,95 @@ async function runFertilizerByConfig(explicitLandIds = [], options = {}) {
   return { normal: normalCount, organic: organicCount };
 }
 
+async function runManualFertilize() {
+  log('施肥', '一键施肥开始', {
+    module: 'farm', event: 'manual_fertilize', result: 'start'
+  });
+  try {
+    const landsReply = await getAllLands();
+    const lands = Array.isArray(landsReply && landsReply.lands) ? landsReply.lands : [];
+    const landIds = lands
+      .filter((land) => {
+        if (!land || !land.unlocked || !land.plant || !Array.isArray(land.plant.phases)) {
+          return false;
+        }
+        const currentPhase = getCurrentPhase(land.plant.phases, false, "", land.plant.id);
+        return currentPhase &&
+          currentPhase.phase !== PlantPhase.DEAD &&
+          currentPhase.phase !== PlantPhase.MATURE;
+      })
+      .map(land => toNum(land.id))
+      .filter(Boolean);
+
+    log('施肥', `一键施肥：找到 ${landIds.length} 块可施肥土地`, {
+      module: 'farm', event: 'manual_fertilize', result: 'targets', count: landIds.length
+    });
+    const result = await runFertilizerByConfig(landIds);
+    log('施肥', `一键施肥完成：普通肥 ${result.normal} 次，有机肥 ${result.organic} 次`, {
+      module: 'farm',
+      event: 'manual_fertilize',
+      result: 'ok',
+      normal: result.normal,
+      organic: result.organic
+    });
+    return result;
+  } catch (error) {
+    logWarn('施肥', `一键施肥失败：${error.message}`, {
+      module: 'farm', event: 'manual_fertilize', result: 'error'
+    });
+    throw error;
+  }
+}
+
+async function runManualOrganicFertilize() {
+  log('施肥', '一键有机开始', {
+    module: 'farm', event: 'manual_organic_fertilize', result: 'start'
+  });
+  try {
+    const landsReply = await getAllLands();
+    const lands = Array.isArray(landsReply && landsReply.lands) ? landsReply.lands : [];
+    const automation = getAutomation() || {};
+    const landTypes = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
+    const landTypeLabels = formatFertilizerLandTypes(landTypes);
+    const landTypeMap = new Map(
+      lands
+        .filter(land => land && toNum(land.id))
+        .map(land => [toNum(land.id), getLandTypeByLevel(land.level)])
+    );
+    const targets = filterLandIdsByTypes(
+      getOrganicFertilizerTargetsFromLands(lands),
+      landTypeMap,
+      landTypes
+    );
+
+    log('施肥', `一键有机：找到 ${targets.length} 块可施有机肥土地`, {
+      module: 'farm', event: 'manual_organic_fertilize', result: 'targets', count: targets.length,
+      landTypes
+    });
+    const count = await fertilizeOrganicLoop(targets);
+    if (count > 0) {
+      recordOperation('fertilize', count);
+    }
+    log('施肥', `一键有机完成：有机肥 ${count} 次（范围: ${landTypeLabels.join('、') || '无'}）`, {
+      module: 'farm',
+      event: 'manual_organic_fertilize',
+      result: 'ok',
+      count,
+      landTypes
+    });
+    return { organic: count };
+  } catch (error) {
+    logWarn('施肥', `一键有机失败：${error.message}`, {
+      module: 'farm', event: 'manual_organic_fertilize', result: 'error'
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   ALL_FERTILIZER_LAND_TYPES,
   FERTILIZER_LAND_TYPE_LABELS,
+  runManualFertilize,
+  runManualOrganicFertilize,
   runFertilizerByConfig
 };

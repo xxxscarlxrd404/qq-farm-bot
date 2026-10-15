@@ -13,14 +13,12 @@ function createAutoCodeRefreshService(deps) {
 
   const scheduler = createScheduler('auto_code_refresh');
   const recoveryState = new Map();
-  const MAX_DAILY_RECOVERIES = 8;
-  const MAX_CONSECUTIVE_FAILURES = 3;
 
   function getRecoveryState(accountId) {
     const date = new Date().toISOString().slice(0, 10);
     const current = recoveryState.get(String(accountId));
     if (!current || current.date !== date) {
-      const fresh = { date, attempts: 0, failures: 0 };
+      const fresh = { date, attempts: 0 };
       recoveryState.set(String(accountId), fresh);
       return fresh;
     }
@@ -46,11 +44,12 @@ function createAutoCodeRefreshService(deps) {
     return accounts.find(acc => String(acc.id) === String(accountId));
   }
 
-  function normalizeConfig(accountId) {
-    const cfg = store.getAutoCodeRefresh ? store.getAutoCodeRefresh(accountId) : null;
+  function normalizeConfig() {
+    const cfg = store.getAutoCodeRefresh ? store.getAutoCodeRefresh() : null;
     return {
       enabled: cfg && cfg.enabled === true,
-      intervalMinutes: Math.max(1, Math.min(1440, Number(cfg && cfg.intervalMinutes) || 60)),
+      intervalMinutes: Math.max(1, Math.min(1440, Number(cfg && cfg.intervalMinutes) || 2)),
+      maxRetries: Math.max(1, Math.min(100, Number(cfg && cfg.maxRetries) || 8)),
     };
   }
 
@@ -73,9 +72,9 @@ function createAutoCodeRefreshService(deps) {
     if (!account) return false;
 
     const recovery = isRecoveryReason(reason) ? getRecoveryState(accountId) : null;
-    if (recovery && (recovery.attempts >= MAX_DAILY_RECOVERIES
-      || recovery.failures >= MAX_CONSECUTIVE_FAILURES)) {
-      addAccountLog('auto_relogin_blocked', '自动重登已熔断，请检查网络或重新扫码',
+    const config = normalizeConfig();
+    if (recovery && recovery.attempts >= config.maxRetries) {
+      addAccountLog('auto_relogin_blocked', '已达到每日自动重试次数上限，请检查网络或重新扫码',
         account.id, account.name, { reason, ...recovery });
       return false;
     }
@@ -95,10 +94,8 @@ function createAutoCodeRefreshService(deps) {
         accountId: String(account.id),
         accountName: account.name,
       });
-      if (recovery) recovery.failures = 0;
       return true;
     } catch (err) {
-      if (recovery) recovery.failures += 1;
       addAccountLog('auto_code_refresh_failed', `自动刷新 Code 失败: ${  err.message}`,
         account.id, account.name, { reason });
       log('错误', `自动刷新 Code 失败: ${  account.name  } - ${  err.message}`, {
@@ -110,7 +107,7 @@ function createAutoCodeRefreshService(deps) {
   }
 
   function scheduleAccount(accountId) {
-    const cfg = normalizeConfig(accountId);
+    const cfg = normalizeConfig();
     const taskName = getTaskName(accountId);
     scheduler.clear(taskName);
     scheduler.clear(getKeepaliveTaskName(accountId));
@@ -169,14 +166,13 @@ function createAutoCodeRefreshService(deps) {
   }
 
   function scheduleRelogin(accountId, reason = 'offline') {
-    const cfg = normalizeConfig(accountId);
+    const cfg = normalizeConfig();
     if (!cfg.enabled) return false;
     const account = findAccount(accountId);
     if (!account || !account.loginBuffer) return false;
     const recovery = getRecoveryState(accountId);
-    if (recovery.attempts >= MAX_DAILY_RECOVERIES
-      || recovery.failures >= MAX_CONSECUTIVE_FAILURES) {
-      addAccountLog('auto_relogin_blocked', '自动重登次数已达上限，请检查网络或重新扫码',
+    if (recovery.attempts >= cfg.maxRetries) {
+      addAccountLog('auto_relogin_blocked', '已达到每日自动重试次数上限，请检查网络或重新扫码',
         account.id, account.name, { reason, ...recovery });
       return false;
     }

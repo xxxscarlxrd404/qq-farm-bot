@@ -1,5 +1,3 @@
-const { performance } = require('node:perf_hooks');
-
 const { createScheduler } = require('./scheduler');
 
 const DEFAULT_PROCESS_INTERVAL_MS = 5000;
@@ -95,7 +93,6 @@ class AceService {
         }
 
         this.inFlight = true;
-        const startedAt = performance.now();
         try {
             const request = this.types.AntiDataRequest.encode(
                 this.types.AntiDataRequest.create({ data }),
@@ -112,7 +109,6 @@ class AceService {
             this.failures = 0;
             this.uploadCount += 1;
             this.lastUploadAt = Date.now();
-            this.logger('info', `ACE 上报成功：发送 ${data.length} 字节，回灌 ${serverData.length} 字节，耗时 ${Math.round(performance.now() - startedAt)}ms`);
             this.schedulePoll(DEFAULT_POLL_INTERVAL_MS);
         } catch (error) {
             this.failures += 1;

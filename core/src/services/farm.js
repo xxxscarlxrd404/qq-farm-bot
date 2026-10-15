@@ -4,7 +4,7 @@
  */
 const farmApi = require('./farm-api');
 const { getCurrentPhase, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand, getLandsDetail } = require('./farm-land-analyzer');
-const { runFertilizerByConfig } = require('./farm-fertilizer');
+const { runManualFertilize, runManualOrganicFertilize, runFertilizerByConfig } = require('./farm-fertilizer');
 const { getAvailableSeeds } = require('./planting-service');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, runFarmOperation } = require('./farming-orchestrator');
 
@@ -30,6 +30,8 @@ module.exports = {
 
   // 操作
   setOperationLimitsCallback: farmApi.setOperationLimitsCallback,
+  runManualFertilize,
+  runManualOrganicFertilize,
   runFertilizerByConfig,
   farming: farmApi.farming,
   NORMAL_FERTILIZER_ID: farmApi.NORMAL_FERTILIZER_ID,

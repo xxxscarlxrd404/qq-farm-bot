@@ -61,12 +61,6 @@ function registerAdminIllustratedRoutes({
       const illustratedType = Number(req.query.illustrated_type) || 1;
       const userLevel = getUserLevel(provider, accountId);
 
-      adminLogger.info("获取图鉴列表请求", {
-        accountId,
-        refresh,
-        illustratedType,
-      });
-
       const [seedGoodsMap, illustratedList, nongmeData] = await Promise.all([
         getSeedShopGoodsMap({
           provider,
@@ -78,30 +72,16 @@ function registerAdminIllustratedRoutes({
         getNongmePlantData(refresh),
       ]);
 
-      adminLogger.info("图鉴列表数据", {
-        itemsCount: illustratedList?.items?.length || 0,
-        hasRaw: !!illustratedList?.__raw,
-        rawCount: illustratedList?.__raw?.rawItemCount || 0,
-      });
-
       const items = sortIllustratedItems(
         (illustratedList?.items || []).map(item =>
           buildIllustratedItem(item, {
             seedGoodsMap,
             userLevel,
-            adminLogger,
             nongmeFruitMap: nongmeData.byFruitId,
           }),
         ),
       );
       const summary = summarizeIllustratedItems(items);
-
-      adminLogger.info("图鉴列表返回", {
-        total: summary.total,
-        unlocked: summary.unlocked,
-        canBuy: summary.canBuy,
-        userLevel,
-      });
 
       res.json({
         ok: true,
@@ -117,7 +97,6 @@ function registerAdminIllustratedRoutes({
     } catch (err) {
       adminLogger.error("获取图鉴列表失败", {
         error: err.message,
-        stack: err.stack,
       });
       sendProviderError(res, err);
     }

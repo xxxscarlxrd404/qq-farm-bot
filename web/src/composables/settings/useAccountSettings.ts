@@ -18,8 +18,6 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
   const deleteLoading = ref(false)
   const editingAccount = ref<any>(null)
   const accountToDelete = ref<any>(null)
-  const showClearStoppedConfirm = ref(false)
-  const clearStoppedLoading = ref(false)
   const refreshWxCodesLoading = ref(false)
 
   const userIsAdmin = computed(() => userStore.isAdmin)
@@ -47,8 +45,6 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
     return ''
   })
 
-  const stoppedAccounts = computed(() => accounts.value.filter((acc: any) => !acc.running))
-  const stoppedAccountsCount = computed(() => stoppedAccounts.value.length)
   const currentAccountName = computed(() => {
     const acc = accounts.value.find((item: any) => item.id === currentAccountId.value)
     return acc ? (acc.name || acc.nick || acc.id) : null
@@ -150,37 +146,6 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
     accountStore.selectAccount(String(account.id))
   }
 
-  function openClearStoppedConfirm() {
-    if (stoppedAccountsCount.value === 0) {
-      showAlert('没有已停止的账号需要清理', 'primary')
-      return
-    }
-    showClearStoppedConfirm.value = true
-  }
-
-  async function confirmClearStopped() {
-    clearStoppedLoading.value = true
-    try {
-      const stoppedIds = stoppedAccounts.value.map((acc: any) => acc.id)
-      let deletedCount = 0
-      for (const id of stoppedIds) {
-        try {
-          await accountStore.deleteAccount(id)
-          deletedCount++
-        }
-        catch (e) {
-          console.error(`删除账号 ${id} 失败:`, e)
-        }
-      }
-      showClearStoppedConfirm.value = false
-      showAlert(`成功清理 ${deletedCount} 个已停止的账号`, 'primary')
-      await accountStore.fetchAccounts()
-    }
-    finally {
-      clearStoppedLoading.value = false
-    }
-  }
-
   return {
     accounts,
     accountsLoading,
@@ -192,10 +157,7 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
     deleteLoading,
     editingAccount,
     accountToDelete,
-    showClearStoppedConfirm,
-    clearStoppedLoading,
     refreshWxCodesLoading,
-    stoppedAccountsCount,
     isAddAccountDisabled,
     addAccountDisabledReason,
     isAccountOpsDisabled,
@@ -210,7 +172,5 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
     refreshWxCodesNow,
     handleSaved,
     selectAccount,
-    openClearStoppedConfirm,
-    confirmClearStopped,
   }
 }

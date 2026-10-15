@@ -9,7 +9,6 @@ defineProps<{
   accountsLoading: boolean
   currentAccountId: string | number | null | undefined
   userIsAdmin: boolean
-  stoppedAccountsCount: number
   isAddAccountDisabled: boolean
   addAccountDisabledReason: string
   isAccountOpsDisabled: boolean
@@ -18,30 +17,20 @@ defineProps<{
   showDeleteConfirm: boolean
   deleteLoading: boolean
   accountToDelete: any
-  showClearStoppedConfirm: boolean
-  clearStoppedLoading: boolean
   refreshWxCodesLoading: boolean
-  defaultPlanSettingId: string
-  defaultPlanApplyingId: string
 }>()
 
 const emit = defineEmits<{
   add: []
-  clearStopped: []
   refreshWxCodes: []
   select: [account: any]
   toggle: [account: any]
-  settings: [account: any]
-  setDefaultPlan: [account: any]
-  applyDefaultPlan: [account: any]
   edit: [account: any]
   delete: [account: any]
   saved: []
   closeModal: []
   closeDeleteConfirm: []
   confirmDelete: []
-  closeClearStoppedConfirm: []
-  confirmClearStopped: []
 }>()
 
 function accountAvatar(acc: any) {
@@ -58,9 +47,6 @@ function accountAvatar(acc: any) {
 <template>
   <div class="space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
-        账号管理
-      </h3>
       <div class="flex flex-wrap gap-2">
         <BaseButton
           variant="outline"
@@ -72,18 +58,6 @@ function accountAvatar(acc: any) {
           <div class="i-carbon-renew mr-2" />
           <span class="hidden sm:inline">{{ userIsAdmin ? '刷新全部微信Code' : '刷新我的微信Code' }}</span>
           <span class="sm:hidden">刷新Code</span>
-        </BaseButton>
-        <BaseButton
-          v-if="userIsAdmin"
-          variant="secondary"
-          size="sm"
-          :disabled="stoppedAccountsCount === 0"
-          @click="emit('clearStopped')"
-        >
-          <div class="i-carbon-trash-can mr-2" />
-          <span class="hidden sm:inline">一键清理</span>
-          <span class="sm:hidden">清理</span>
-          ({{ stoppedAccountsCount }})
         </BaseButton>
         <BaseButton
           variant="primary"
@@ -119,11 +93,11 @@ function accountAvatar(acc: any) {
       </BaseButton>
     </div>
 
-    <div v-else class="grid grid-cols-1 gap-4 lg:grid-cols-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div v-else class="grid grid-cols-1 gap-4">
       <div
         v-for="acc in accounts"
         :key="acc.id"
-        class="cursor-pointer border rounded-lg bg-white p-3 shadow transition-all duration-200 dark:bg-gray-800 sm:p-4"
+        class="cursor-pointer border rounded-lg bg-white p-2 shadow transition-all duration-200 dark:bg-gray-800 sm:p-3"
         :class="String(currentAccountId) === String(acc.id)
           ? 'ring-2'
           : 'border-transparent'"
@@ -132,36 +106,34 @@ function accountAvatar(acc: any) {
           : {}"
         @click="emit('select', acc)"
       >
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div class="min-w-0 flex flex-1 items-center gap-3">
-            <div class="h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 sm:h-12 sm:w-12 dark:bg-gray-700">
-              <img v-if="accountAvatar(acc)" :src="accountAvatar(acc)" class="h-full w-full object-cover">
-              <div v-else class="i-carbon-user text-xl text-gray-400 sm:text-2xl" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <h4 class="truncate text-base font-bold sm:text-lg">
-                {{ acc.name || acc.nick || acc.id }}
-              </h4>
-              <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
-                <span
-                  v-if="acc.platform"
-                  class="rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight"
-                  :class="getPlatformClass(acc.platform)"
-                >
-                  {{ getPlatformLabel(acc.platform) }}
-                </span>
-              </div>
-            </div>
+        <div class="flex min-w-0 items-center gap-1 sm:gap-2">
+          <div class="h-9 w-9 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 sm:h-10 sm:w-10 dark:bg-gray-700">
+            <img v-if="accountAvatar(acc)" :src="accountAvatar(acc)" class="h-full w-full object-cover">
+            <div v-else class="i-carbon-user text-lg text-gray-400 sm:text-xl" />
           </div>
-          <div class="flex items-center justify-end gap-2 sm:flex-col sm:items-end">
-            <span class="flex items-center gap-1 text-xs text-gray-500 sm:hidden">
-              <div class="h-2 w-2 rounded-full" :class="acc.running ? 'bg-green-500' : 'bg-gray-300'" />
+          <div class="w-10 flex shrink-0 flex-col items-start justify-center gap-1 sm:w-12">
+            <span
+              v-if="acc.platform"
+              class="rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight"
+              :class="getPlatformClass(acc.platform)"
+            >
+              {{ getPlatformLabel(acc.platform) }}
+            </span>
+            <span class="flex items-center gap-1 whitespace-nowrap text-[9px] text-gray-500 sm:text-[10px] dark:text-gray-400">
+              <span class="h-2 w-2 rounded-full" :class="acc.running ? 'bg-green-500' : 'bg-gray-300'" />
               {{ acc.running ? '运行中' : '已停止' }}
             </span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <h4 class="truncate text-sm font-bold sm:text-base">
+              {{ acc.name || acc.nick || acc.id }}
+            </h4>
+          </div>
+          <div class="flex shrink-0 items-center gap-0.5">
             <BaseButton
               variant="secondary"
               size="sm"
-              class="border rounded-full shadow-sm transition-all duration-500 ease-in-out sm:w-20 active:scale-95"
+              class="border rounded-full px-2 shadow-sm transition-all duration-500 ease-in-out active:scale-95"
               :class="acc.running ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 focus:ring-red-500 active:border-red-300 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 dark:focus:ring-red-500 dark:active:border-red-700' : 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100 focus:ring-green-500 active:border-green-300 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:focus:ring-green-500 dark:active:border-green-700'"
               :disabled="!acc.running && isAccountOpsDisabled"
               :title="!acc.running && isAccountOpsDisabled ? '账号已到期，无法启动账号' : ''"
@@ -170,75 +142,21 @@ function accountAvatar(acc: any) {
               <div :class="acc.running ? 'i-carbon-stop-filled' : 'i-carbon-play-filled'" class="mr-1" />
               {{ acc.running ? '停止' : '启动' }}
             </BaseButton>
-          </div>
-        </div>
-
-        <div class="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 sm:mt-4 dark:border-gray-700 sm:pt-4">
-          <div class="hidden items-center gap-2 text-sm text-gray-500 sm:flex">
-            <span class="flex items-center gap-1">
-              <div class="h-2 w-2 rounded-full" :class="acc.running ? 'bg-green-500' : 'bg-gray-300'" />
-              {{ acc.running ? '运行中' : '已停止' }}
-            </span>
-          </div>
-
-          <div class="flex flex-1 justify-end gap-1 sm:flex-initial sm:gap-2">
-            <BaseButton
-              :data-testid="`set-default-plan-${acc.id}`"
-              variant="ghost"
-              class="group relative min-h-[36px] min-w-[36px] !p-2"
-              :loading="defaultPlanSettingId === String(acc.id)"
-              :disabled="!!defaultPlanSettingId || !!defaultPlanApplyingId"
-              aria-label="设置默认方案"
-              title="设置默认方案"
-              @click="emit('setDefaultPlan', acc)"
-            >
-              <div v-if="defaultPlanSettingId !== String(acc.id)" i-carbon-document-export />
-              <span class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 -translate-x-1/2 dark:bg-gray-100 dark:text-gray-900 group-focus-visible:opacity-100 group-hover:opacity-100">
-                设置默认方案
-              </span>
-            </BaseButton>
-            <BaseButton
-              :data-testid="`apply-default-plan-${acc.id}`"
-              variant="ghost"
-              class="group relative min-h-[36px] min-w-[36px] !p-2"
-              :loading="defaultPlanApplyingId === String(acc.id)"
-              :disabled="!!defaultPlanSettingId || !!defaultPlanApplyingId"
-              aria-label="应用默认方案"
-              title="应用默认方案"
-              @click="emit('applyDefaultPlan', acc)"
-            >
-              <div v-if="defaultPlanApplyingId !== String(acc.id)" i-carbon-document-import />
-              <span class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 -translate-x-1/2 dark:bg-gray-100 dark:text-gray-900 group-focus-visible:opacity-100 group-hover:opacity-100">
-                应用默认方案
-              </span>
-            </BaseButton>
             <BaseButton
               variant="ghost"
-              class="group relative min-h-[36px] min-w-[36px] !p-2"
-              aria-label="设置"
-              title="设置"
-              @click="emit('settings', acc)"
-            >
-              <div i-carbon-settings />
-              <span class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 -translate-x-1/2 dark:bg-gray-100 dark:text-gray-900 group-focus-visible:opacity-100 group-hover:opacity-100">
-                设置
-              </span>
-            </BaseButton>
-            <BaseButton
-              variant="ghost"
-              class="group relative min-h-[36px] min-w-[36px] !p-2"
-              aria-label="编辑"
-              title="编辑"
+              class="group relative min-h-[30px] min-w-[30px] !p-1.5"
+              aria-label="code管理"
+              title="code管理"
               @click="emit('edit', acc)"
             >
-              <div i-carbon-edit />
+              <div i-carbon-password />
               <span class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-150 -translate-x-1/2 dark:bg-gray-100 dark:text-gray-900 group-focus-visible:opacity-100 group-hover:opacity-100">
-                编辑
+                code管理
               </span>
             </BaseButton>
             <BaseButton
               variant="ghost"
-              class="group relative min-h-[36px] min-w-[36px] text-red-500 !p-2 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300"
+              class="group relative min-h-[30px] min-w-[30px] !p-1.5 text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300"
               aria-label="删除"
               title="删除"
               @click="emit('delete', acc)"
@@ -270,18 +188,6 @@ function accountAvatar(acc: any) {
       @close="!deleteLoading && emit('closeDeleteConfirm')"
       @cancel="!deleteLoading && emit('closeDeleteConfirm')"
       @confirm="emit('confirmDelete')"
-    />
-
-    <ConfirmModal
-      :show="showClearStoppedConfirm"
-      :loading="clearStoppedLoading"
-      title="一键清理已停止账号"
-      :message="`确定要清理 ${stoppedAccountsCount} 个已停止的账号吗？此操作不可恢复！`"
-      confirm-text="确认清理"
-      type="danger"
-      @close="!clearStoppedLoading && emit('closeClearStoppedConfirm')"
-      @cancel="!clearStoppedLoading && emit('closeClearStoppedConfirm')"
-      @confirm="emit('confirmClearStopped')"
     />
   </div>
 </template>

@@ -71,6 +71,7 @@ const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: 
   activity: { title: '日常与活动', description: '日常任务、活动奖励和活动道具', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
 }
 
+const visibleModuleInfo = moduleInfo
 const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.value] : null)
 const fertilizerName = computed(() => props.fertilizerOptions.find(item => item.value === automation.value.automation.fertilizer)?.label || '未设置')
 const selectedLandNames = computed(() => props.fertilizerLandTypeOptions.filter(item => automation.value.automation.fertilizer_land_types?.includes(item.value)).map(item => item.label))
@@ -306,14 +307,12 @@ watch(() => props.currentAccountId, loadQixiFriends)
     </div>
     <template v-else>
       <div class="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <span class="text-gray-700 font-medium dark:text-gray-300">账号设置</span>
-        <span class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600" />
         <span>{{ currentAccountName ? `正在配置：${currentAccountName}` : '请先在账号管理中选择账号' }}</span>
       </div>
 
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <article
-          v-for="(info, key) in moduleInfo"
+          v-for="(info, key) in visibleModuleInfo"
           :key="key"
           class="group min-h-[184px] flex flex-col border border-gray-200 rounded-lg bg-white p-4 transition dark:border-gray-700 hover:border-[var(--theme-primary)] dark:bg-gray-800 hover:shadow-sm"
         >

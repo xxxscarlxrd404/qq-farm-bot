@@ -11,75 +11,79 @@ function requireAccountAccess(req, res, { getAccountIdFromRequest, canAccessAcco
   return accountId;
 }
 
-function getOfflineReminderConfig(store, currentUser, body) {
+function getOfflineReminderConfig(store, accountId, body) {
   const saved =
-    store.getOfflineReminder && currentUser
-      ? store.getOfflineReminder(currentUser.username)
+    store.getOfflineReminder && accountId
+      ? store.getOfflineReminder(accountId)
       : {};
-  return { ...(saved || {}), ...(body || {}) };
+  const submitted = body && typeof body === "object" ? body : {};
+  const savedCredentials = saved.channelCredentials || {};
+  const submittedCredentials = submitted.channelCredentials || {};
+  const channelCredentials = { ...savedCredentials };
+  for (const [channel, credentials] of Object.entries(submittedCredentials)) {
+    channelCredentials[channel] = {
+      ...(savedCredentials[channel] || {}),
+      ...(credentials || {}),
+    };
+  }
+  return { ...saved, ...submitted, channelCredentials };
 }
 
 async function sendOfflineReminderTest(config) {
-  const { sendPushooMessage, sendSmtpEmail } = require("../services/push");
-  const channel = String(config.channel || "smtp").trim().toLowerCase();
-  if (channel === "smtp") {
-    const smtpHost = String(config.smtpHost || "").trim();
-    const smtpPort = Number(config.smtpPort) || 465;
-    const smtpUser = String(config.smtpUser || "").trim();
-    const smtpPass = String(config.smtpPass || "").trim();
-    const senderName = String(config.senderName || "").trim();
-    const recipientEmail = String(config.recipientEmail || "").trim();
-    if (!smtpHost) return { error: "SMTP服务器地址不能为空" };
-    if (!smtpUser) return { error: "邮箱账号不能为空" };
-    if (!smtpPass) return { error: "授权码不能为空" };
-    if (!recipientEmail) return { error: "收件人邮箱不能为空" };
-
-    return sendSmtpEmail({
-      smtpHost,
-      smtpPort,
-      smtpUser,
-      smtpPass,
-      senderName,
-      recipientEmail,
-      subject: "下线提醒（测试）",
-      content: "这是一封测试邮件，收到它代表你配置邮箱成功了！--For Dot.",
-    });
-  }
-
-  const endpoint = String(config.endpoint || "").trim();
-  const token = String(config.token || "").trim();
+  const { sendPushooMessage, sendWxPusherMessage, sendWxPusherWechatMessage } = require("../services/push");
+  const channel = String(config.channel || "qmsg").trim().toLowerCase();
+  const hasChannelCredentials = Object.hasOwn(config.channelCredentials || {}, channel);
+  const channelCredentials = hasChannelCredentials ? config.channelCredentials[channel] || {} : {};
+  const token = String(hasChannelCredentials
+    ? channelCredentials.token || ""
+    : config.channel === channel ? config.token || "" : "").trim();
+  const wxPusherUid = String(hasChannelCredentials
+    ? channelCredentials.wxPusherUid || ""
+    : config.channel === channel ? config.wxPusherUid || "" : "").trim();
   const titleBase = String(config.title || "账号下线提醒").trim();
   const msgBase = String(config.msg || "账号下线").trim();
-  if (!channel) return { error: "推送渠道不能为空" };
-  if (channel === "webhook" && !endpoint) {
-    return { error: "Webhook 渠道需要填写接口地址" };
+  if (!["qmsg", "wxpusher", "wxpusher_wechat", "bark"].includes(channel)) {
+    return { error: "不支持的推送渠道，请选择 Qmsg 酱、WxPusher、Bark" };
   }
-  if (channel !== "webhook" && !token) {
-    return { error: "推送 token 不能为空" };
+  if (!token) {
+    const tokenLabel = channel === "qmsg"
+      ? "Qmsg 酱 Key"
+      : channel === "bark"
+        ? "Bark Key 或服务器 URL"
+        : channel === "wxpusher_wechat"
+          ? "WxPusher AppToken"
+          : "WxPusher SPT";
+    return { error: `${tokenLabel} 不能为空` };
+  }
+  if (channel === "wxpusher_wechat" && !wxPusherUid) {
+    return { error: "WxPusher 接收者 UID 不能为空" };
   }
 
   const ts = new Date().toISOString().replace("T", " ").slice(0, 19);
-  return sendPushooMessage({
+  const payload = {
     channel,
-    endpoint,
     token,
+    wxPusherUid,
     title: `${titleBase}（测试）`,
     content: `${msgBase}\n\n这是一条下线提醒测试消息。\n时间: ${ts}`,
-  });
+  };
+  if (channel === "wxpusher_wechat") return sendWxPusherWechatMessage(payload);
+  if (channel === "wxpusher") return sendWxPusherMessage(payload);
+  return sendPushooMessage(payload);
 }
 
-function buildSettingsPayload(store, accountId, currentUser) {
+function buildSettingsPayload(store, accountId) {
   const accountConfig = accountId && typeof store.getConfigSnapshot === "function"
     ? store.getConfigSnapshot(accountId)
     : {};
   const offlineReminderDefault = {
-    smtpHost: "",
-    smtpPort: 465,
-    smtpUser: "",
-    smtpPass: "",
-    senderName: "",
-    recipientEmail: "",
-    emailContent: "",
+    channel: "qmsg",
+    reloginUrlMode: "none",
+    token: "",
+    wxPusherUid: "",
+    title: "账号下线提醒",
+    msg: "账号下线",
+    offlineDeleteSec: 0,
   };
 
   return {
@@ -93,9 +97,9 @@ function buildSettingsPayload(store, accountId, currentUser) {
     friendQuietHours: accountId ? store.getFriendQuietHours(accountId) : null,
     automation: accountId ? store.getAutomation(accountId) : {},
     autoCodeRefresh:
-      accountId && typeof store.getAutoCodeRefresh === "function"
-        ? store.getAutoCodeRefresh(accountId)
-        : { enabled: false, intervalMinutes: 60 },
+      typeof store.getAutoCodeRefresh === "function"
+        ? store.getAutoCodeRefresh()
+        : { enabled: true, intervalMinutes: 2, maxRetries: 8 },
     fertilizerBuyOrganicCount:
       accountId && typeof store.getFertilizerBuyOrganicCount === "function"
         ? store.getFertilizerBuyOrganicCount(accountId)
@@ -137,8 +141,8 @@ function buildSettingsPayload(store, accountId, currentUser) {
         : "level",
     ui: store.getUI(),
     offlineReminder:
-      store.getOfflineReminder && currentUser
-        ? store.getOfflineReminder(currentUser.username)
+      store.getOfflineReminder && accountId
+        ? store.getOfflineReminder(accountId)
         : offlineReminderDefault,
   };
 }
@@ -273,15 +277,25 @@ function registerAdminSettingsRoutes({
     }
   });
 
+  app.get("/api/settings/auto-code-refresh", (req, res) => {
+    if (!req.currentUser) {
+      return res.status(401).json({ ok: false, error: "未登录" });
+    }
+    try {
+      res.json({ ok: true, data: store.getAutoCodeRefresh() });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
   app.post("/api/settings/auto-code-refresh", async (req, res) => {
-    const accountId = requireAccountAccess(req, res, {
-      getAccountIdFromRequest,
-      canAccessAccount,
-    });
-    if (!accountId) return;
+    if (!req.currentUser) {
+      return res.status(401).json({ ok: false, error: "未登录" });
+    }
 
     try {
-      const data = await provider.saveAutoCodeRefresh(accountId, req.body || {});
+      const result = await provider.saveAutoCodeRefresh(req.body || {});
+      const data = result && result.autoCodeRefresh ? result.autoCodeRefresh : result;
       res.json({ ok: true, data: data || {} });
     } catch (error) {
       res.status(500).json({ ok: false, error: error.message });
@@ -304,6 +318,12 @@ function registerAdminSettingsRoutes({
   });
 
   app.post("/api/settings/offline-reminder", async (req, res) => {
+    const accountId = requireAccountAccess(req, res, {
+      getAccountIdFromRequest,
+      canAccessAccount,
+    });
+    if (!accountId) return;
+
     try {
       const body = req.body && typeof req.body === "object" ? req.body : {};
       const currentUser = req.currentUser;
@@ -318,11 +338,12 @@ function registerAdminSettingsRoutes({
       }
 
       const data = store.setOfflineReminder
-        ? store.setOfflineReminder(body, currentUser.username)
+        ? store.setOfflineReminder(body, accountId)
         : {};
       if (Number(body.offlineDeleteSec || 0) > 0) {
         logger.warn("更新下线提醒离线删除设置", {
           user: currentUser.username,
+          accountId,
           offlineDeleteSec: Number(body.offlineDeleteSec || 0),
           channel: String(body.channel || ""),
           confirmation: "ENABLE_OFFLINE_DELETE",
@@ -335,10 +356,15 @@ function registerAdminSettingsRoutes({
   });
 
   app.post("/api/settings/offline-reminder/test", async (req, res) => {
+    const accountId = requireAccountAccess(req, res, {
+      getAccountIdFromRequest,
+      canAccessAccount,
+    });
+    if (!accountId) return;
+
     try {
-      const currentUser = req.currentUser;
       const body = req.body && typeof req.body === "object" ? req.body : {};
-      const config = getOfflineReminderConfig(store, currentUser, body);
+      const config = getOfflineReminderConfig(store, accountId, body);
       const result = await sendOfflineReminderTest(config);
       if (!result) {
         return res
@@ -364,13 +390,12 @@ function registerAdminSettingsRoutes({
   app.get("/api/settings", async (req, res) => {
     try {
       const accountId = getAccountIdFromRequest(req);
-      const currentUser = req.currentUser;
       if (accountId && !canAccessAccount(req, accountId)) {
         return res.status(403).json({ ok: false, error: "无权访问此账号" });
       }
       res.json({
         ok: true,
-        data: buildSettingsPayload(store, accountId, currentUser),
+        data: buildSettingsPayload(store, accountId),
       });
     } catch (error) {
       res.status(500).json({ ok: false, error: error.message });

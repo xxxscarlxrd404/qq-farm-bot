@@ -213,30 +213,23 @@ const ALLOWED_PLANTING_STRATEGIES = [
 const ALLOWED_BAG_SEED_FALLBACK_STRATEGIES = ALLOWED_PLANTING_STRATEGIES.filter(
     s => s !== 'bag_priority' && s !== 'task_priority'
 );
-const PUSHOO_CHANNELS = new Set([
-    'webhook', 'qmsg', 'serverchan', 'pushplus', 'pushplushxtrip',
-    'dingtalk', 'wecom', 'bark', 'gocqhttp', 'onebot', 'atri',
-    'pushdeer', 'igot', 'telegram', 'feishu', 'ifttt', 'wecombot',
-    'discord', 'wxpusher',
-]);
-
 // ==================== 默认配置 ====================
 
 const DEFAULT_OFFLINE_REMINDER = {
-    channel: 'smtp',
+    channel: 'qmsg',
     reloginUrlMode: 'none',
-    endpoint: '',
     token: '',
+    wxPusherUid: '',
+    channelCredentials: {},
     title: '账号下线提醒',
     msg: '账号下线',
-    offlineDeleteSec: 0,
-    smtpHost: '',
-    smtpPort: 465,
-    smtpUser: '',
-    smtpPass: '',
-    senderName: '',
-    recipientEmail: '',
-    emailContent: ''
+    offlineDeleteSec: 0
+};
+const OFFLINE_REMINDER_CHANNELS = ['qmsg', 'wxpusher', 'wxpusher_wechat', 'bark'];
+const DEFAULT_AUTO_CODE_REFRESH = {
+    enabled: true,
+    intervalMinutes: 2,
+    maxRetries: 8
 };
 
 const DEFAULT_FERTILIZER_LAND_TYPES = ['purple', 'gold', 'black', 'red', 'normal'];
@@ -459,10 +452,6 @@ function normalizeCapitalMode(value, fallback = DEFAULT_CAPITAL_MODE) {
 /** 默认账号配置 */
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: DEFAULT_AUTOMATION,
-    autoCodeRefresh: {
-        enabled: false,
-        intervalMinutes: 60
-    },
     plantingStrategy: 'max_exp',
     prioritize2x2Crops: false,
     prioritizeGrowthTasks: false,
@@ -577,15 +566,9 @@ function normalizeOfflineReminder(raw) {
     const input = raw && typeof raw === 'object' ? raw : {};
     const def = DEFAULT_OFFLINE_REMINDER;
 
-    const endpoint = input.endpoint !== undefined && input.endpoint !== null
-        ? String(input.endpoint).trim() : def.endpoint;
-
     const rawChannel = input.channel !== undefined && input.channel !== null
         ? String(input.channel).trim().toLowerCase() : '';
-    const legacyEndpointChannel = PUSHOO_CHANNELS.has(endpoint.toLowerCase())
-        ? endpoint.toLowerCase() : '';
-    let channel = rawChannel || legacyEndpointChannel || def.channel;
-    if (channel !== 'smtp' && !PUSHOO_CHANNELS.has(channel)) channel = def.channel;
+    const channel = OFFLINE_REMINDER_CHANNELS.includes(rawChannel) ? rawChannel : def.channel;
 
     const rawReloginUrlMode = input.reloginUrlMode !== undefined && input.reloginUrlMode !== null
         ? String(input.reloginUrlMode).trim().toLowerCase() : def.reloginUrlMode;
@@ -598,49 +581,41 @@ function normalizeOfflineReminder(raw) {
     const token = input.token !== undefined && input.token !== null
         ? String(input.token).trim() : def.token;
 
+    const wxPusherUid = input.wxPusherUid !== undefined && input.wxPusherUid !== null
+        ? String(input.wxPusherUid).trim() : def.wxPusherUid;
+
+    const rawCredentials = input.channelCredentials && typeof input.channelCredentials === 'object'
+        ? input.channelCredentials : {};
+    const channelCredentials = {};
+    for (const credentialChannel of OFFLINE_REMINDER_CHANNELS) {
+        const hasChannelCredential = Object.hasOwn(rawCredentials, credentialChannel);
+        const rawCredential = rawCredentials[credentialChannel];
+        const credential = rawCredential && typeof rawCredential === 'object' ? rawCredential : {};
+        let credentialToken = String(credential.token || '').trim();
+        let credentialUid = String(credential.wxPusherUid || '').trim();
+        if (credentialChannel === channel && !hasChannelCredential && token) credentialToken = token;
+        if (credentialChannel === channel && !hasChannelCredential && wxPusherUid) credentialUid = wxPusherUid;
+        channelCredentials[credentialChannel] = {
+            token: credentialToken,
+            wxPusherUid: credentialUid
+        };
+    }
+
     const title = input.title !== undefined && input.title !== null
         ? String(input.title).trim() : def.title;
 
     const msg = input.msg !== undefined && input.msg !== null
         ? String(input.msg).trim() : def.msg;
 
-    const smtpHost = input.smtpHost !== undefined && input.smtpHost !== null
-        ? String(input.smtpHost).trim() : def.smtpHost;
-
-    const smtpPortRaw = Number.parseInt(input.smtpPort, 10);
-    const smtpPort = (!Number.isFinite(smtpPortRaw) || smtpPortRaw <= 0 || smtpPortRaw > 65535)
-        ? def.smtpPort : smtpPortRaw;
-
-    const smtpUser = input.smtpUser !== undefined && input.smtpUser !== null
-        ? String(input.smtpUser).trim() : def.smtpUser;
-
-    const smtpPass = input.smtpPass !== undefined && input.smtpPass !== null
-        ? String(input.smtpPass).trim() : def.smtpPass;
-
-    const senderName = input.senderName !== undefined && input.senderName !== null
-        ? String(input.senderName).trim() : def.senderName;
-
-    const recipientEmail = input.recipientEmail !== undefined && input.recipientEmail !== null
-        ? String(input.recipientEmail).trim() : def.recipientEmail;
-
-    const emailContent = input.emailContent !== undefined && input.emailContent !== null
-        ? String(input.emailContent).trim() : def.emailContent;
-
     return {
         channel,
         reloginUrlMode,
-        endpoint,
-        token,
+        token: channelCredentials[channel].token,
+        wxPusherUid: channelCredentials[channel].wxPusherUid,
+        channelCredentials,
         title,
         msg,
-        offlineDeleteSec,
-        smtpHost,
-        smtpPort,
-        smtpUser,
-        smtpPass,
-        senderName,
-        recipientEmail,
-        emailContent
+        offlineDeleteSec
     };
 }
 
@@ -673,6 +648,8 @@ function normalizeIntervals(raw) {
 // ==================== 配置克隆/合并 ====================
 
 function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
+    const accountFields = { ...config };
+    delete accountFields.autoCodeRefresh;
     const srcAuto = config && config.automation && typeof config.automation === 'object'
         ? config.automation : {};
     const auto = { ...DEFAULT_ACCOUNT_CONFIG.automation };
@@ -692,12 +669,8 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
     const plantBlacklist = Array.isArray(config.plantBlacklist) ? config.plantBlacklist : [];
 
     return {
-        ...config,
+        ...accountFields,
         automation: auto,
-        autoCodeRefresh: {
-            enabled: config.autoCodeRefresh && config.autoCodeRefresh.enabled === true,
-            intervalMinutes: Math.max(1, Math.min(1440, Number(config.autoCodeRefresh && config.autoCodeRefresh.intervalMinutes) || 60))
-        },
         intervals: { ...config.intervals || DEFAULT_ACCOUNT_CONFIG.intervals },
         friendQuietHours: { ...config.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours },
         knownFriendGids,
@@ -761,10 +734,12 @@ let accountFallbackConfig = (() => {
 const globalConfig = {
     accountConfigs: {},
     defaultAccountConfig: cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG),
+    autoCodeRefresh: { ...DEFAULT_AUTO_CODE_REFRESH },
     userDefaultAccountPlans: {},
     ui: { theme: 'light' },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
     userOfflineReminders: {},
+    accountOfflineReminders: {},
     adminPasswordHash: '',
     announcement: { content: '', showOnce: true, updatedAt: 0 },
     announcementReadRecords: {},
@@ -807,14 +782,6 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
         }
     }
     disableHiddenActivityAutomation(cfg.automation);
-
-    // 自动刷新 Code
-    if (input.autoCodeRefresh && typeof input.autoCodeRefresh === 'object') {
-        cfg.autoCodeRefresh = {
-            enabled: input.autoCodeRefresh.enabled === true,
-            intervalMinutes: Math.max(1, Math.min(1440, Number(input.autoCodeRefresh.intervalMinutes) || 60))
-        };
-    }
 
     if (input.capitalMode && typeof input.capitalMode === 'object') {
         cfg.capitalMode = normalizeCapitalMode(input.capitalMode, cfg.capitalMode);
@@ -919,7 +886,6 @@ function pickDefaultPlanConfig(raw) {
     const cfg = normalizeAccountConfig(raw, DEFAULT_ACCOUNT_CONFIG);
     return {
         automation: { ...cfg.automation },
-        autoCodeRefresh: { ...cfg.autoCodeRefresh },
         plantingStrategy: cfg.plantingStrategy,
         prioritize2x2Crops: cfg.prioritize2x2Crops === true,
         prioritizeGrowthTasks: cfg.prioritizeGrowthTasks === true || cfg.plantingStrategy === 'task_priority',
@@ -1001,6 +967,7 @@ function loadGlobalConfig() {
 
         accountFallbackConfig = cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG);
         globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
+        globalConfig.autoCodeRefresh = normalizeAutoCodeRefresh(data.autoCodeRefresh);
 
         // 加载各账号配置
         const rawConfigs = data.accountConfigs && typeof data.accountConfigs === 'object'
@@ -1048,6 +1015,15 @@ function loadGlobalConfig() {
             const adminReminder = normalizeOfflineReminder(data.offlineReminder);
             if (!globalConfig.userOfflineReminders.admin) {
                 globalConfig.userOfflineReminders.admin = adminReminder;
+            }
+        }
+        const rawAccountReminders = data.accountOfflineReminders && typeof data.accountOfflineReminders === 'object'
+            ? data.accountOfflineReminders : {};
+        globalConfig.accountOfflineReminders = {};
+        for (const [key, val] of Object.entries(rawAccountReminders)) {
+            const accountId = String(key || '').trim();
+            if (accountId && val) {
+                globalConfig.accountOfflineReminders[accountId] = normalizeOfflineReminder(val);
             }
         }
 
@@ -1169,6 +1145,7 @@ function loadGlobalConfig() {
 function sanitizeGlobalConfigBeforeSave() {
     accountFallbackConfig = normalizeAccountConfig(globalConfig.defaultAccountConfig, DEFAULT_ACCOUNT_CONFIG);
     globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
+    globalConfig.autoCodeRefresh = normalizeAutoCodeRefresh(globalConfig.autoCodeRefresh);
 
     const rawConfigs = globalConfig.accountConfigs && typeof globalConfig.accountConfigs === 'object'
         ? globalConfig.accountConfigs : {};
@@ -1199,6 +1176,16 @@ function sanitizeGlobalConfigBeforeSave() {
         cleanReminders[id] = normalizeOfflineReminder(val);
     }
     globalConfig.userOfflineReminders = cleanReminders;
+
+    const rawAccountReminders = globalConfig.accountOfflineReminders && typeof globalConfig.accountOfflineReminders === 'object'
+        ? globalConfig.accountOfflineReminders : {};
+    const cleanAccountReminders = {};
+    for (const [key, val] of Object.entries(rawAccountReminders)) {
+        const accountId = String(key || '').trim();
+        if (!accountId || !val) continue;
+        cleanAccountReminders[accountId] = normalizeOfflineReminder(val);
+    }
+    globalConfig.accountOfflineReminders = cleanAccountReminders;
 
     const rawProtocols = globalConfig.userDeviceProtocols && typeof globalConfig.userDeviceProtocols === 'object'
         ? globalConfig.userDeviceProtocols : {};
@@ -1265,7 +1252,6 @@ function getConfigSnapshot(accountId) {
     const ui = { ...globalConfig.ui };
     return {
         automation: auto,
-        autoCodeRefresh: { ...cfg.autoCodeRefresh },
         plantingStrategy: cfg.plantingStrategy,
         prioritize2x2Crops: cfg.prioritize2x2Crops === true,
         prioritizeGrowthTasks: cfg.prioritizeGrowthTasks === true || cfg.plantingStrategy === 'task_priority',
@@ -1318,13 +1304,6 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
         }
     }
     disableHiddenActivityAutomation(cfg.automation);
-
-    if (patch.autoCodeRefresh && typeof patch.autoCodeRefresh === 'object') {
-        cfg.autoCodeRefresh = {
-            enabled: patch.autoCodeRefresh.enabled === true,
-            intervalMinutes: Math.max(1, Math.min(1440, Number(patch.autoCodeRefresh.intervalMinutes) || 60))
-        };
-    }
 
     if (patch.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(patch.plantingStrategy)) {
         cfg.plantingStrategy = patch.plantingStrategy;
@@ -1421,23 +1400,25 @@ function setAutomation(key, value, accountId) {
     return applyConfigSnapshot(patch, { accountId });
 }
 
-function getAutoCodeRefresh(accountId) {
-    const cfg = getAccountConfigSnapshot(accountId).autoCodeRefresh || DEFAULT_ACCOUNT_CONFIG.autoCodeRefresh;
+function normalizeAutoCodeRefresh(config) {
+    const input = config && typeof config === 'object' ? config : {};
+    const intervalMinutes = Number(input.intervalMinutes);
+    const maxRetries = Number(input.maxRetries);
     return {
-        enabled: cfg.enabled === true,
-        intervalMinutes: Math.max(1, Math.min(1440, Number(cfg.intervalMinutes) || 60))
+        enabled: input.enabled !== false,
+        intervalMinutes: Math.max(1, Math.min(1440, Number.isFinite(intervalMinutes) ? Math.round(intervalMinutes) : DEFAULT_AUTO_CODE_REFRESH.intervalMinutes)),
+        maxRetries: Math.max(1, Math.min(100, Number.isFinite(maxRetries) ? Math.round(maxRetries) : DEFAULT_AUTO_CODE_REFRESH.maxRetries))
     };
 }
 
-function setAutoCodeRefresh(accountId, config) {
-    const data = config && typeof config === 'object' ? config : {};
-    const result = applyConfigSnapshot({
-        autoCodeRefresh: {
-            enabled: data.enabled === true,
-            intervalMinutes: data.intervalMinutes
-        }
-    }, { accountId });
-    return result.autoCodeRefresh;
+function getAutoCodeRefresh() {
+    return normalizeAutoCodeRefresh(globalConfig.autoCodeRefresh);
+}
+
+function setAutoCodeRefresh(config) {
+    globalConfig.autoCodeRefresh = normalizeAutoCodeRefresh(config);
+    saveGlobalConfig();
+    return getAutoCodeRefresh();
 }
 
 function getCapitalMode(accountId) {
@@ -1572,25 +1553,21 @@ function setUITheme(theme) {
     return applyConfigSnapshot({ ui: { theme: raw === 'light' ? 'light' : 'dark' } });
 }
 
-function getOfflineReminder(username) {
-    if (!username) return normalizeOfflineReminder(globalConfig.offlineReminder);
-    const userReminder = globalConfig.userOfflineReminders && globalConfig.userOfflineReminders[username];
-    if (userReminder) return normalizeOfflineReminder(userReminder);
-    return normalizeOfflineReminder({});
+function getOfflineReminder(accountId) {
+    const id = String(accountId || '').trim();
+    if (!id) return normalizeOfflineReminder({});
+    const reminder = globalConfig.accountOfflineReminders && globalConfig.accountOfflineReminders[id];
+    return normalizeOfflineReminder(reminder || {});
 }
 
-function setOfflineReminder(config, username) {
-    if (!username) {
-        const current = normalizeOfflineReminder(globalConfig.offlineReminder);
-        globalConfig.offlineReminder = normalizeOfflineReminder({ ...current, ...config || {} });
-        saveGlobalConfig();
-        return getOfflineReminder();
-    }
-    if (!globalConfig.userOfflineReminders) globalConfig.userOfflineReminders = {};
-    const current = normalizeOfflineReminder(globalConfig.userOfflineReminders[username] || {});
-    globalConfig.userOfflineReminders[username] = normalizeOfflineReminder({ ...current, ...config || {} });
+function setOfflineReminder(config, accountId) {
+    const id = String(accountId || '').trim();
+    if (!id) throw new Error('下线提醒必须关联当前账号');
+    if (!globalConfig.accountOfflineReminders) globalConfig.accountOfflineReminders = {};
+    const current = normalizeOfflineReminder(globalConfig.accountOfflineReminders[id] || {});
+    globalConfig.accountOfflineReminders[id] = normalizeOfflineReminder({ ...current, ...config || {} });
     saveGlobalConfig();
-    return getOfflineReminder(username);
+    return getOfflineReminder(id);
 }
 
 function deleteUserOfflineReminder(username) {
@@ -1662,7 +1639,7 @@ function addOrUpdateAccount(account) {
             id: accountId,
             name: account.name || `账号${  id}`,
             code: account.code || '',
-            platform: account.platform || 'qq',
+            platform: account.platform || 'wx',
             loginType: account.loginType || 'manual',
             wxid: account.wxid ? String(account.wxid) : '',
             loginBuffer: account.loginBuffer ? String(account.loginBuffer) : '',
@@ -1699,6 +1676,10 @@ function deleteAccount(accountId) {
     if (data.accounts.length === 0) data.nextId = 1;
     saveAccounts(data);
     removeAccountConfig(accountId);
+    if (globalConfig.accountOfflineReminders && globalConfig.accountOfflineReminders[String(accountId)]) {
+        delete globalConfig.accountOfflineReminders[String(accountId)];
+        saveGlobalConfig();
+    }
     deleteAccountCaches(accountId);
     return data;
 }

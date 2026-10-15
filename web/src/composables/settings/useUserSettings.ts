@@ -1,6 +1,7 @@
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import api from '@/api'
+import { useAccountStore } from '@/stores/account'
 import { useSettingStore } from '@/stores/setting'
 
 interface DeviceProtocolConfig {
@@ -74,30 +75,17 @@ const DEVICE_PROTOCOL_PRESETS = [
 ] as const
 
 const CHANNEL_DOCS: Record<string, string> = {
-  webhook: '',
   qmsg: 'https://qmsg.zendee.cn/',
-  serverchan: 'https://sct.ftqq.com/',
-  pushplus: 'https://www.pushplus.plus/',
-  pushplushxtrip: 'https://pushplus.hxtrip.com/',
-  dingtalk: 'https://open.dingtalk.com/document/group/custom-robot-access',
-  wecom: 'https://guole.fun/posts/626/',
-  wecombot: 'https://developer.work.weixin.qq.com/document/path/91770',
-  bark: 'https://github.com/Finb/Bark',
-  gocqhttp: 'https://docs.go-cqhttp.org/api/',
-  onebot: 'https://docs.go-cqhttp.org/api/',
-  atri: 'https://blog.tianli0.top/',
-  pushdeer: 'https://www.pushdeer.com/',
-  igot: 'https://push.hellyw.com/',
-  telegram: 'https://core.telegram.org/bots',
-  feishu: 'https://www.feishu.cn/hc/zh-CN/articles/360024984973',
-  ifttt: 'https://ifttt.com/maker_webhooks',
-  discord: 'https://discord.com/developers/docs/resources/webhook#execute-webhook',
   wxpusher: 'https://wxpusher.zjiecode.com/docs/#/',
+  wxpusher_wechat: 'https://wxpusher.zjiecode.com/docs/api-reference.html',
+  bark: 'https://github.com/Finb/Bark',
 }
 
 export function useUserSettings(showAlert: (message: string, type?: AlertType) => void) {
   const settingStore = useSettingStore()
+  const accountStore = useAccountStore()
   const { settings } = storeToRefs(settingStore)
+  const { currentAccountId } = storeToRefs(accountStore)
 
   const offlineSaving = ref(false)
   const offlineTesting = ref(false)
@@ -112,43 +100,26 @@ export function useUserSettings(showAlert: (message: string, type?: AlertType) =
   const deviceProtocolForm = ref<DeviceProtocolConfig>({ ...DEFAULT_DEVICE_PROTOCOL })
 
   const localOffline = ref({
-    channel: 'smtp',
+    channel: 'qmsg',
     reloginUrlMode: 'none',
-    endpoint: '',
     token: '',
+    wxPusherUid: '',
+    channelCredentials: {
+      qmsg: { token: '', wxPusherUid: '' },
+      wxpusher: { token: '', wxPusherUid: '' },
+      wxpusher_wechat: { token: '', wxPusherUid: '' },
+      bark: { token: '', wxPusherUid: '' },
+    },
     title: '',
     msg: '',
     offlineDeleteSec: 0,
-    smtpHost: '',
-    smtpPort: 465,
-    smtpUser: '',
-    smtpPass: '',
-    senderName: '',
-    recipientEmail: '',
-    emailContent: '',
   })
 
   const channelOptions = [
-    { label: 'SMTP 邮件', value: 'smtp' },
-    { label: 'Webhook(自定义接口)', value: 'webhook' },
     { label: 'Qmsg 酱', value: 'qmsg' },
-    { label: 'Server 酱', value: 'serverchan' },
-    { label: 'Push Plus', value: 'pushplus' },
-    { label: 'Push Plus Hxtrip', value: 'pushplushxtrip' },
-    { label: '钉钉', value: 'dingtalk' },
-    { label: '企业微信', value: 'wecom' },
-    { label: 'Bark', value: 'bark' },
-    { label: 'Go-cqhttp', value: 'gocqhttp' },
-    { label: 'OneBot', value: 'onebot' },
-    { label: 'Atri', value: 'atri' },
-    { label: 'PushDeer', value: 'pushdeer' },
-    { label: 'iGot', value: 'igot' },
-    { label: 'Telegram', value: 'telegram' },
-    { label: '飞书', value: 'feishu' },
-    { label: 'IFTTT', value: 'ifttt' },
-    { label: '企业微信群机器人', value: 'wecombot' },
-    { label: 'Discord', value: 'discord' },
-    { label: 'WxPusher', value: 'wxpusher' },
+    { label: 'WxPusher(SPT)', value: 'wxpusher' },
+    { label: 'WxPusher(标准)', value: 'wxpusher_wechat' },
+    { label: 'Bark（iPhone 推送）', value: 'bark' },
   ]
 
   const reloginUrlModeOptions = [
@@ -296,9 +267,13 @@ export function useUserSettings(showAlert: (message: string, type?: AlertType) =
   }, { deep: true })
 
   async function handleSaveOffline() {
+    if (!currentAccountId.value) {
+      showAlert('请先选择账号', 'danger')
+      return
+    }
     offlineSaving.value = true
     try {
-      const res = await settingStore.saveOfflineConfig(localOffline.value)
+      const res = await settingStore.saveOfflineConfig(localOffline.value, String(currentAccountId.value))
 
       if (res.ok) {
         showAlert('下线提醒设置已保存', 'primary')
@@ -313,9 +288,15 @@ export function useUserSettings(showAlert: (message: string, type?: AlertType) =
   }
 
   async function handleTestOffline() {
+    if (!currentAccountId.value) {
+      showAlert('请先选择账号', 'danger')
+      return
+    }
     offlineTesting.value = true
     try {
-      const { data } = await api.post('/api/settings/offline-reminder/test', localOffline.value)
+      const { data } = await api.post('/api/settings/offline-reminder/test', localOffline.value, {
+        headers: { 'x-account-id': String(currentAccountId.value) },
+      })
       if (data?.ok) {
         showAlert('测试消息发送成功', 'primary')
       }

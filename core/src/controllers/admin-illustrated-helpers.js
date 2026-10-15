@@ -8,6 +8,8 @@ const { getNongmeSeedImageUrl } = require("../services/nongme-plant-data");
 const { toNum } = require("../utils/utils");
 
 const SEED_SHOP_TYPE = 2;
+const SEED_SHOP_WARNING_INTERVAL_MS = 10 * 60 * 1000;
+const seedShopWarningTimes = new Map();
 
 function getUserLevel(provider, accountId) {
   const status = provider.getStatus(accountId);
@@ -38,23 +40,21 @@ async function getSeedShopGoodsMap({
       }
     }
 
-    adminLogger.info("种子商店映射", {
-      sampleItems: goodsList.slice(0, 3).map(goods => ({
-        goodsId: toNum(goods.id),
-        itemId: toNum(goods.item_id),
-        price: toNum(goods.price),
-        unlocked: goods.unlocked,
-      })),
-      mapSize: seedGoodsMap.size,
-    });
-
+    seedShopWarningTimes.delete(String(accountId));
     return seedGoodsMap;
   } catch (err) {
     if (!tolerateFailure) throw err;
 
-    adminLogger.warn("获取种子商店失败，跳过可购买判断", {
-      error: err.message,
-    });
+    const key = String(accountId);
+    const now = Date.now();
+    const lastWarning = seedShopWarningTimes.get(key);
+    if (lastWarning === undefined || now - lastWarning >= SEED_SHOP_WARNING_INTERVAL_MS) {
+      adminLogger.warn("图鉴可购买判断暂不可用", {
+        accountId,
+        error: err.message,
+      });
+      seedShopWarningTimes.set(key, now);
+    }
     return new Map();
   }
 }
@@ -75,7 +75,7 @@ function getPlantSeedInfo(fruitId, nongmePlant) {
 
 function buildIllustratedItem(
   rawItem,
-  { seedGoodsMap, userLevel, adminLogger, nongmeFruitMap },
+  { seedGoodsMap, userLevel, nongmeFruitMap },
 ) {
   const fruitId = toNum(rawItem.seed_id) || 0;
   const fruitConfig = getItemById(fruitId);
@@ -99,18 +99,6 @@ function buildIllustratedItem(
         total: toNum(rawGuaranteeInfo.total) || 0,
       }
     : null;
-
-  if (!unlocked && seedId > 0) {
-    adminLogger.info("图鉴可购买检查", {
-      fruitId,
-      seedId,
-      seedLevel,
-      userLevel,
-      hasGoods: !!seedGoods,
-      goodsId,
-      price,
-    });
-  }
 
   return {
     seedId: fruitId,

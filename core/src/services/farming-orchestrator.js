@@ -62,7 +62,7 @@ async function checkFarm() {
 
 /**
  * 执行农场操作
- * @param {string} opType - 操作类型：'all' | 'harvest' | 'plant' | 'clear' | 'upgrade'
+ * @param {string} opType - 操作类型：'all' | 'plant' | 'clear' | 'upgrade'
  */
 async function runFarmOperation(opType) {
   const landsReply = await getAllLands();
@@ -123,7 +123,7 @@ async function runFarmOperation(opType) {
   let harvestResult = null;
   let removeResult = null;
 
-  if (opType === 'all' || opType === 'harvest') {
+  if (opType === 'all') {
     if (analysis.harvestable.length > 0) {
       try {
         harvestResult = await harvest(analysis.harvestable);

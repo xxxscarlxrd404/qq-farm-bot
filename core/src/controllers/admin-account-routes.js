@@ -327,13 +327,9 @@ function registerAdminAccountRoutes({
           const isNativeWxScan = created.platform === "wx"
             && created.loginType === "wx_qr"
             && !!body.wxSessionId;
-          if (isNativeWxScan && typeof provider.saveAutoCodeRefresh === "function") {
-            await provider.saveAutoCodeRefresh(created.id, {
-              enabled: true,
-              intervalMinutes: 60,
-            });
-            autoRefreshEnabled = true;
-          }
+          autoRefreshEnabled = isNativeWxScan
+            && typeof store.getAutoCodeRefresh === "function"
+            && store.getAutoCodeRefresh().enabled;
           // 启动微信账号会包含凭证续期和 MMTLS 换 Code，不能阻塞新增账号响应。
           // 账号与刷新策略落盘后立即返回，启动任务在后台继续执行。
           startQueued = true;

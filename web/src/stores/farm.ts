@@ -136,6 +136,26 @@ export const useFarmStore = defineStore('farm', () => {
     await fetchLands(accountId)
   }
 
+  async function fertilizeAll(accountId: string) {
+    if (!accountId)
+      return
+    const { data } = await api.post('/api/farm/fertilize', {}, {
+      headers: { 'x-account-id': accountId },
+    })
+    await fetchLands(accountId)
+    return data
+  }
+
+  async function fertilizeOrganicAll(accountId: string) {
+    if (!accountId)
+      return
+    const { data } = await api.post('/api/farm/fertilize-organic', {}, {
+      headers: { 'x-account-id': accountId },
+    })
+    await fetchLands(accountId)
+    return data
+  }
+
   async function fertilizeLand(accountId: string, landId: number) {
     if (!accountId)
       return
@@ -181,6 +201,8 @@ export const useFarmStore = defineStore('farm', () => {
     fetchDogSkillGiftStatus,
     claimDogSkillGifts,
     operate,
+    fertilizeAll,
+    fertilizeOrganicAll,
     fertilizeLand,
     removePlant,
     removeAllPlants,
