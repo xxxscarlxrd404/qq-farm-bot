@@ -241,10 +241,12 @@ onUnmounted(() => {
         <div class="shop-sign" :style="{ backgroundImage: `url(${img('img_s4TeaUI_titleBg')})` }">
           <div class="shop-level">
             <b>{{ state.shop.level }}</b><span>店铺等级</span>
-          </div><div>
-            <strong>{{ state.summary.shop_name || '奶茶小铺' }}</strong><button class="edit image-button" @click="open('rename')">
-              <img :src="img('img_s4TeaUI_editBtn')" alt="修改店名">
-            </button><p>营业额： <img class="revenue-ticket" :src="img('img_s4TeaUI_rewardpng')" alt="奶茶券"> {{ state.shop.total_revenue }}</p>
+          </div><div class="shop-details">
+            <div class="shop-name">
+              <strong>{{ state.summary.shop_name || '奶茶小铺' }}</strong><button class="edit image-button" @click="open('rename')">
+                <img :src="img('img_s4TeaUI_editBtn')" alt="修改店名">
+              </button>
+            </div><p>营业额： <img class="revenue-ticket" :src="img('img_s4TeaUI_rewardpng')" alt="奶茶券"> {{ state.shop.total_revenue }}</p>
           </div><button class="upgrade image-button" @click="open('upgrade')">
             <img :src="img('img_s4TeaUI_myShop')" alt="店铺升级"><span>店铺升级</span>
           </button>
@@ -453,6 +455,8 @@ onUnmounted(() => {
 }
 .image-button {
   padding: 0;
+  min-width: 0;
+  min-height: 0;
 }
 .milk-header {
   position: absolute;
@@ -507,6 +511,9 @@ onUnmounted(() => {
   color: #99724e !important;
   width: 5.8cqw;
   height: 5.8cqw;
+  min-width: 0;
+  min-height: 0;
+  flex-shrink: 0;
   box-shadow: 0 0 0 0.65cqw #fff7df55;
   font-size: 5cqw;
   font-weight: 900;
@@ -570,6 +577,24 @@ onUnmounted(() => {
 .shop-sign strong {
   font-size: 3.7cqw;
   line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shop-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5cqw;
+}
+.shop-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+.shop-name .edit {
+  flex-shrink: 0;
 }
 .shop-sign p {
   display: flex;
@@ -925,10 +950,14 @@ onUnmounted(() => {
 .goods-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Keep overflowing rows at their content height inside the flex scroll area. */
+  grid-auto-rows: max-content;
   gap: 3cqw 2cqw;
 }
 .goods {
   position: relative;
+  width: 100%;
+  min-height: 33cqw;
   aspect-ratio: 240/320;
   background-size: 100% 100%;
   padding: 6% 5% 8% !important;
