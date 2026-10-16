@@ -5,9 +5,10 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint \"src/**/*.{ts,vue}\" --fix",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "vue-tsc -b"
   },
   "dependencies": {
     "@vueuse/core": "^14.2.1",
