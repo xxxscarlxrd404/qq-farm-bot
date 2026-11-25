@@ -1,4 +1,0 @@
-interface:
-  display_name: "QQ Farm Activity Protocol Recovery"
-  short_description: "Recover QQ Farm Operate protobuf schemas"
-  default_prompt: "Use $qq-farm-activity-protocol-recovery to recover an unknown ActivityService.Operate action and produce an evidence-backed schema and request hex."

@@ -1,8 +1,0 @@
-packages:
-  - core
-  - web
-
-ignoredBuiltDependencies:
-  - '@parcel/watcher'
-  - esbuild
-  - protobufjs
